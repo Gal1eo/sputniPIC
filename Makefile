@@ -38,3 +38,6 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 clean:
 	rm -rf $(OBJS)
 	rm -rf $(TARGET)
+
+run:
+	./bin/sputniPIC.out inputfiles/GEM_2D.inp
