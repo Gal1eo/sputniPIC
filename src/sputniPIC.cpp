@@ -87,7 +87,7 @@ int main(int argc, char **argv){
     
         // set to zero the densities - needed for interpolation
         setZeroDensities(&idn,ids,&grd,param.ns);
-6
+
         
         
         // implicit mover
