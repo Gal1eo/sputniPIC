@@ -81,7 +81,7 @@ void cpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* gr
 
 /** particle mover kernel of GPU*/
 
-__global__ void gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
+__global__ void gpu_mover_PC(struct particles** part, struct EMfield* field, struct grid* grd, struct parameters* param)
 {
     // getting thread ID
     const int i_sub = blockIdx.x * blockDim.x + threadIdx.x;
@@ -245,11 +245,11 @@ __global__ void gpu_mover_PC(struct particles* part, struct EMfield* field, stru
 }
 
 /** particle mover */
-int mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
+int mover_PC(struct particles** part, struct EMfield* field, struct grid* grd, struct parameters* param)
 {
     // print species and subcycling
     std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
-    struct particles* gpu_part;
+    struct particles** gpu_part;
     cudaMalloc(&gpu_part, param.ns* sizeof(particles));
     cudaMemcpy(gpu_part, part, param.ns*sizeof(particles), cudaMemcpyHostToDevice);
     gpu_mover_PC<<<(param.ns+TPB-1)/TPB>>>(&gpu_part, &field, &grd, &param);
