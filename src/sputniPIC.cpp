@@ -92,9 +92,9 @@ int main(int argc, char **argv){
         
         // implicit mover
         iMover = cpuSecond(); // start timer for mover
-        mover_PC(&part, &field, &grd, &param);
-        //for (int is=0; is < param.ns; is++)
-        //    mover_PC(&part[is],&field,&grd,&param);
+        //mover_PC(&part, &field, &grd, &param);
+        for (int is=0; is < param.ns; is++)
+            mover_PC(&part[is],&field,&grd,&param);
         eMover += (cpuSecond() - iMover); // stop timer for mover
         
 
