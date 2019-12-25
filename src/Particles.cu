@@ -242,8 +242,8 @@ int cpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 __global__ void gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
 {
     // getting thread ID
-    const int i_sub = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i_sub > part->nop) return 0;
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i > part->nop) return 0;
 
 
     // print species and subcycling
