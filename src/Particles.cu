@@ -243,11 +243,11 @@ __global__ void gpu_mover_PC(struct particles* part, struct EMfield* field, stru
 {
     // getting thread ID
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > part->nop) return 0;
+    if (i > part->nop) return;
 
 
     // print species and subcycling
-    std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
+    // std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
 
     // auxiliary variables
     FPpart dt_sub_cycling = (FPpart) param->dt/((double) part->n_sub_cycles);
@@ -408,11 +408,21 @@ int mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, st
     // print species and subcycling
     std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
     struct particles* gpu_part;
-    cudaMalloc(&gpu_part, param.ns* sizeof(particles));
-    cudaMemcpy(gpu_part, part, param.ns*sizeof(particles), cudaMemcpyHostToDevice);
-    gpu_mover_PC<<<(param.ns+TPB-1)/TPB>>>(&gpu_part, &field, &grd, &param);
+    struct EMfield* gpu_field;
+    struct grid* gpu_grid;
+    struct parameters* gpu_param;
+    cudaMalloc(&gpu_part, sizeof(particles));
+    cudaMalloc(&gpu_field, sizeof(EMfield));
+    cudaMalloc(&gpu_grid, sizeof(grid));
+    cudaMalloc(&gpu_param, sizeof(parameters));
+
+    cudaMemcpy(gpu_part, part, sizeof(particles), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_field, part, sizeof(EMfield), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_grid, part, sizeof(grid), cudaMemcpyHostToDevice);
+    cudaMemcpy(gpu_param, part, sizeof(parameters), cudaMemcpyHostToDevice);
+    gpu_mover_PC<<<(part->nop+TPB-1)/TPB>>>(gpu_part, field, grd, param);
     cudaMemcpy(part, gpu_part, sizeof(particles), cudaMemcpyDeviceToHost);
-    cudaFree(gpu_part)
+    cudaFree(gpu_part);
 
     return(0); // exit succcesfully
 } // end of the mover
