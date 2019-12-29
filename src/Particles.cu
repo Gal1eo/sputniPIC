@@ -238,8 +238,8 @@ int cpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 /*
 1D block. Number of blocks = number of particles / TPB
  */
-__global__ particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w,
-                            FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, nxn, nyn, nzn, 
+__global__ void particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w,
+                            FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn, 
                             double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz,
                             double Lx, double Ly, double Lz, FPfield invVOL,
                             FPfield* Ex_flat, FPfield* Ey_flat, FPfield* Ez_flat, 
@@ -277,12 +277,12 @@ __global__ particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* 
         iz = 2 +  int((z[idx] - zStart)*invdz);
 
         // calculate weights
-        xi[0]   = x[i] - XN_flat[get_idx(ix-1, iy, iz, nyn, nzn)];//grd->XN[ix - 1][iy][iz];
-        eta[0]  = y[i] - YN_flat[get_idx(ix, iy-1, iz, nyn, nzn)];//grd->YN[ix][iy - 1][iz];
-        zeta[0] = z[i] - ZN_flat[get_idx(ix, iy, iz-1, nyn, nzn)];//grd->ZN[ix][iy][iz - 1];
-        xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[i];//grd->XN[ix][iy][iz] - x[i];
-        eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[i];//;grd->YN[ix][iy][iz] - y[i];
-        zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[i];//grd->ZN[ix][iy][iz] - z[i];
+        xi[0]   = x[idx] - XN_flat[get_idx(ix-1, iy, iz, nyn, nzn)];//grd->XN[ix - 1][iy][iz];
+        eta[0]  = y[idx] - YN_flat[get_idx(ix, iy-1, iz, nyn, nzn)];//grd->YN[ix][iy - 1][iz];
+        zeta[0] = z[idx] - ZN_flat[get_idx(ix, iy, iz-1, nyn, nzn)];//grd->ZN[ix][iy][iz - 1];
+        xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];//grd->XN[ix][iy][iz] - x[i];
+        eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
+        zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
         for (int ii = 0; ii < 2; ii++)
             for (int jj = 0; jj < 2; jj++)
                 for (int kk = 0; kk < 2; kk++)
@@ -294,12 +294,12 @@ __global__ particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* 
         for (int ii=0; ii < 2; ii++)
             for (int jj=0; jj < 2; jj++)
                 for(int kk=0; kk < 2; kk++){
-                    Exl += weight[ii][jj][kk]*Ex[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ex[ix- ii][iy -jj][iz- kk ];
-                    Eyl += weight[ii][jj][kk]*Ey[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ey[ix- ii][iy -jj][iz- kk ];
-                    Ezl += weight[ii][jj][kk]*Ez[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ez[ix- ii][iy -jj][iz -kk ];
-                    Bxl += weight[ii][jj][kk]*Bxn[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bxn[ix- ii][iy -jj][iz -kk ];
-                    Byl += weight[ii][jj][kk]*Byn[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Byn[ix- ii][iy -jj][iz -kk ];
-                    Bzl += weight[ii][jj][kk]*Bzn[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bzn[ix- ii][iy -jj][iz -kk ];
+                    Exl += weight[ii][jj][kk]*Ex_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ex[ix- ii][iy -jj][iz- kk ];
+                    Eyl += weight[ii][jj][kk]*Ey_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ey[ix- ii][iy -jj][iz- kk ];
+                    Ezl += weight[ii][jj][kk]*Ez_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ez[ix- ii][iy -jj][iz -kk ];
+                    Bxl += weight[ii][jj][kk]*Bxn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bxn[ix- ii][iy -jj][iz -kk ];
+                    Byl += weight[ii][jj][kk]*Byn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Byn[ix- ii][iy -jj][iz -kk ];
+                    Bzl += weight[ii][jj][kk]*Bzn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bzn[ix- ii][iy -jj][iz -kk ];
                 }
 
         // end interpolation
@@ -408,7 +408,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     FPpart dto2 = .5*dt_sub_cycling, qomdt2 = part->qom*dto2/param->c;
 
     //particles
-    FPpart* d_x, d_y, d_z, d_u, d_v, d_w;
+    FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
     cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
     cudaMemcpy(d_x, part->x, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
 
@@ -428,41 +428,42 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMemcpy(d_w, part->w, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
 
     //grid
-    FPfield* d_XN_flat, d_YN_flat, d_ZN_flat;
-    cudaMalloc(&d_XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    FPfield* d_XN_flat, *d_YN_flat, *d_ZN_flat;
+    cudaMalloc(&d_XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_XN_flat, grd->XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_YN_flat, grd->YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_XN_flat, grd->XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
     //field
-    FPfield* d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat;
+    FPfield* d_Ex_flat, *d_Ey_flat, *d_Ez_flat, *d_Bxn_flat, *d_Byn_flat, *d_Bzn_flat;
     //E-nodes 
-    cudaMalloc(&d_Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Ex_flat, field->Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_Ey_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_Ey_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Ey_flat, field->Ey_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_Ez_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_Ez_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Ez_flat, field->Ez_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
     //B-nodes
-    cudaMalloc(&d_Bxn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_Bxn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Bxn_flat, field->Bxn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Byn_flat, field->Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    cudaMalloc(&d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield);
+    cudaMalloc(&d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Bzn_flat, field->Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
+    std::cout<<"Before loop"<<std::endl;
     // start subcycling
     for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
         /*call kernel*/
-        particle_kernel<<<(part->nmpax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w,
+        particle_kernel<<<(part->npmax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w,
                                                                 d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
                                                                 grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, 
                                                                 grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
@@ -622,24 +623,25 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 
     cudaMemcpy(field->Bzn_flat, d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
     //free memory
-    dellArr1(d_x);
-    dellArr1(d_y);
-    dellArr1(d_z);
-    dellArr1(d_u);
-    dellArr1(d_v);
-    dellArr1(d_w);
+    delArr1(d_x);
+    delArr1(d_y);
+    delArr1(d_z);
+    delArr1(d_u);
+    delArr1(d_v);
+    delArr1(d_w);
 
-    dellArr1(d_Ex_flat)
-    dellArr1(d_Ey_flat);
-    dellArr1(d_Ez_flat);
-    dellArr1(d_Bxn_flat);
-    dellArr1(d_Byn_flat);
-    dellArr1(d_Bzn_flat);
+    delArr1(d_Ex_flat);
+    delArr1(d_Ey_flat);
+    delArr1(d_Ez_flat);
+    delArr1(d_Bxn_flat);
+    delArr1(d_Byn_flat);
+    delArr1(d_Bzn_flat);
     return(0); // exit succcesfully
 } // end of the mover
 
 
 /** particle mover */
+/*
 int mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
 {
     // print species and subcycling
@@ -663,7 +665,7 @@ int mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, st
 
     return(0); // exit succcesfully
 } // end of the mover
-
+*/
 
 
 /** Interpolation Particle --> Grid: This is for species */

@@ -61,6 +61,9 @@ void particle_deallocate(struct particles*);
 /** cpu_particle mover*/
 int cpu_mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*);
 
+/** cpu_particle mover*/
+int gpu_mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*);
+
 /** particle mover */
 int mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*);
 
