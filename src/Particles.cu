@@ -471,6 +471,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                                                                 param->PERIODICX, param->PERIODICY, param->PERIODICZ,
                                                                 dt_sub_cycling, dto2, qomdt2, 
                                                                 part->NiterMover, part->npmax);
+	cudaDeviceSynchronize();
         // move each particle with new fields
         /*
         for (int i=0; i <  part->nop; i++){
@@ -622,7 +623,9 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMemcpy(field->Byn_flat, d_Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
 
     cudaMemcpy(field->Bzn_flat, d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+    
     //free memory
+    /*
     delArr1(d_x);
     delArr1(d_y);
     delArr1(d_z);
@@ -636,6 +639,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     delArr1(d_Bxn_flat);
     delArr1(d_Byn_flat);
     delArr1(d_Bzn_flat);
+*/
     return(0); // exit succcesfully
 } // end of the mover
 
