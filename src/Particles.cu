@@ -238,11 +238,24 @@ int cpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 /*
 1D block. Number of blocks = number of particles / TPB
  */
-__global__ particle_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, const int npmax)
+__global__ particle_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, dt_sub_cycling, dto2, qomdt2, const int npmax)
 {
     //calculate global index and check boundary
     const int idx = blockIdx.x*blockDim.x + threadIdx.x;
     if(idx > npmax) return;
+
+    FPpart omdtsq, denom, ut, vt, wt, udotb;
+
+    // local (to the particle) electric and magnetic field
+    FPfield Exl=0.0, Eyl=0.0, Ezl=0.0, Bxl=0.0, Byl=0.0, Bzl=0.0;
+
+    // interpolation densities
+    int ix,iy,iz;
+    FPfield weight[2][2][2];
+    FPfield xi[2], eta[2], zeta[2];
+
+    // intermediate particle position and velocity
+    FPpart xptilde, yptilde, zptilde, uptilde, vptilde, wptilde;
 
     // replace all indicies i to idx. all part->* replace to *
     xptilde = x[idx];
@@ -385,23 +398,34 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     // auxiliary variables
     FPpart dt_sub_cycling = (FPpart) param->dt/((double) part->n_sub_cycles);
     FPpart dto2 = .5*dt_sub_cycling, qomdt2 = part->qom*dto2/param->c;
-    FPpart omdtsq, denom, ut, vt, wt, udotb;
 
-    // local (to the particle) electric and magnetic field
-    FPfield Exl=0.0, Eyl=0.0, Ezl=0.0, Bxl=0.0, Byl=0.0, Bzl=0.0;
+    FPpart* d_x, d_y, d_z, d_u, d_v, d_w;
+    cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_x, part->x, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
 
-    // interpolation densities
-    int ix,iy,iz;
-    FPfield weight[2][2][2];
-    FPfield xi[2], eta[2], zeta[2];
+    cudaMalloc(&d_y, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_y, part->y, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
 
-    // intermediate particle position and velocity
-    FPpart xptilde, yptilde, zptilde, uptilde, vptilde, wptilde;
+    cudaMalloc(&d_z, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_z, part->z, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_u, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_u, part->u, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_v, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_v, part->v, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_w, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_w, part->w, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
 
     // start subcycling
     for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
         /*call kernel*/
+        particle_kernel<<<(part->nmpax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, 
+                                                                dt_sub_cycling, dto2, qomdt2, 
+                                                                part->npmax);
         // move each particle with new fields
+        /*
         for (int i=0; i <  part->nop; i++){
             xptilde = part->x[i];
             yptilde = part->y[i];
@@ -531,9 +555,15 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 
 
 
-        }  // end of subcycling
+        }*/  // end of subcycling
     } // end of one particle
-
+    cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->z, d_z, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->u, d_u, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->v, d_v, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->w, d_w, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    //TODO free memory
     return(0); // exit succcesfully
 } // end of the mover
 
