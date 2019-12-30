@@ -672,6 +672,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
     cudaDeviceSynchronize();
 
     //particle
+    /*
     cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
     cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
     cudaMemcpy(part->z, d_z, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
@@ -679,7 +680,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
     cudaMemcpy(part->v, d_v, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
     cudaMemcpy(part->w, d_w, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
     cudaMemcpy(part->q, d_q, part->npmax * sizeof(FPinterp), cudaMemcpyDeviceToHost);
-
+    */
     //ids
     cudaMemcpy(ids->Jx_flat, d_Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
     cudaMemcpy(ids->Jy_flat, d_Jy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
@@ -699,9 +700,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
     cudaFree(d_u);
     cudaFree(d_v);
     cudaFree(d_w);
-
     cudaFree(d_q);
-    
     cudaFree(d_XN_flat);
     cudaFree(d_YN_flat);
     cudaFree(d_ZN_flat);
@@ -713,11 +712,6 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
     cudaFree(d_pyz_flat);
     cudaFree(d_pzz_flat);
 
-    cudaFree(d_XN_flat);
-    cudaFree(d_x);
-    cudaFree(d_x);
-    cudaFree(d_x);
-    cudaFree(d_x);
     return;
 }
 
