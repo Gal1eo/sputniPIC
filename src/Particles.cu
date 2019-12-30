@@ -523,11 +523,11 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
                                 double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
                                 FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp *Jz_flat, FPinterp *rhon_flat,
                                 FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat,
-                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int nop)
+                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int npmax)
 {
     //calculate global index and check boundary
     const int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx >= nop) return;
+    if(idx >= npmax) return;
 
     // arrays needed for interpolation
     FPpart weight[2][2][2];
@@ -796,7 +796,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, grd->invVOL,
             d_Jx_flat, d_Jy_flat, d_Jz_flat, d_rhon_flat,
             d_pxx_flat, d_pxy_flat, d_pxz_flat, d_pyy_flat, d_pyz_flat, d_pzz_flat,
-            part->nop);
+            part->npmax);
 
     cudaDeviceSynchronize();
 
