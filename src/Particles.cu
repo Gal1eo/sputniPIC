@@ -235,23 +235,23 @@ int cpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 } // end of the mover
 
 
-
-
-/** particle mover kernel of GPU*/
-
-__global__ void gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
+/*
+1D block. Number of blocks = number of particles / TPB
+ */
+__global__ void particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w,
+                            FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn, 
+                            double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz,
+                            double Lx, double Ly, double Lz, FPfield invVOL,
+                            FPfield* Ex_flat, FPfield* Ey_flat, FPfield* Ez_flat, 
+                            FPfield* Bxn_flat, FPfield* Byn_flat, FPfield* Bzn_flat,
+                            bool PERIODICX, bool PERIODICY, bool PERIODICZ, 
+                            FPpart dt_sub_cycling, FPpart dto2, FPpart qomdt2,
+                            const int NiterMover, const int npmax)
 {
-    // getting thread ID
-    const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i > part->nop) return;
+    //calculate global index and check boundary
+    const int idx = blockIdx.x*blockDim.x + threadIdx.x;
+    if(idx > npmax) return;
 
-
-    // print species and subcycling
-    // std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
-
-    // auxiliary variables
-    FPpart dt_sub_cycling = (FPpart) param->dt/((double) part->n_sub_cycles);
-    FPpart dto2 = .5*dt_sub_cycling, qomdt2 = part->qom*dto2/param->c;
     FPpart omdtsq, denom, ut, vt, wt, udotb;
 
     // local (to the particle) electric and magnetic field
@@ -265,144 +265,391 @@ __global__ void gpu_mover_PC(struct particles* part, struct EMfield* field, stru
     // intermediate particle position and velocity
     FPpart xptilde, yptilde, zptilde, uptilde, vptilde, wptilde;
 
+    // replace all indicies i to idx. all part->* replace to *
+    xptilde = x[idx];
+    yptilde = y[idx];
+    zptilde = z[idx];
+    // calculate the average velocity iteratively
+    for(int innter=0; innter < NiterMover; innter++){
+        // interpolation G-->P
+        ix = 2 +  int((x[idx] - xStart)*invdx);
+        iy = 2 +  int((y[idx] - yStart)*invdy);
+        iz = 2 +  int((z[idx] - zStart)*invdz);
 
-    // start subcycling
-    for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
-        // move each particle with new fields
-        xptilde = part->x[i];
-        yptilde = part->y[i];
-        zptilde = part->z[i];
-        // calculate the average velocity iteratively
-        for(int innter=0; innter < part->NiterMover; innter++){
-            // interpolation G-->P
-            ix = 2 +  int((part->x[i] - grd->xStart)*grd->invdx);
-            iy = 2 +  int((part->y[i] - grd->yStart)*grd->invdy);
-            iz = 2 +  int((part->z[i] - grd->zStart)*grd->invdz);
+        // calculate weights
+        xi[0]   = x[idx] - XN_flat[get_idx(ix-1, iy, iz, nyn, nzn)];//grd->XN[ix - 1][iy][iz];
+        eta[0]  = y[idx] - YN_flat[get_idx(ix, iy-1, iz, nyn, nzn)];//grd->YN[ix][iy - 1][iz];
+        zeta[0] = z[idx] - ZN_flat[get_idx(ix, iy, iz-1, nyn, nzn)];//grd->ZN[ix][iy][iz - 1];
+        xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];//grd->XN[ix][iy][iz] - x[i];
+        eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
+        zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
+        for (int ii = 0; ii < 2; ii++)
+            for (int jj = 0; jj < 2; jj++)
+                for (int kk = 0; kk < 2; kk++)
+                    weight[ii][jj][kk] = xi[ii] * eta[jj] * zeta[kk] * invVOL;
 
-            // calculate weights
-            xi[0]   = part->x[i] - grd->XN[ix - 1][iy][iz];
-            eta[0]  = part->y[i] - grd->YN[ix][iy - 1][iz];
-            zeta[0] = part->z[i] - grd->ZN[ix][iy][iz - 1];
-            xi[1]   = grd->XN[ix][iy][iz] - part->x[i];
-            eta[1]  = grd->YN[ix][iy][iz] - part->y[i];
-            zeta[1] = grd->ZN[ix][iy][iz] - part->z[i];
-            for (int ii = 0; ii < 2; ii++)
-                for (int jj = 0; jj < 2; jj++)
-                    for (int kk = 0; kk < 2; kk++)
-                        weight[ii][jj][kk] = xi[ii] * eta[jj] * zeta[kk] * grd->invVOL;
+        // set to zero local electric and magnetic field
+        Exl=0.0, Eyl = 0.0, Ezl = 0.0, Bxl = 0.0, Byl = 0.0, Bzl = 0.0;
 
-            // set to zero local electric and magnetic field
-            Exl=0.0, Eyl = 0.0, Ezl = 0.0, Bxl = 0.0, Byl = 0.0, Bzl = 0.0;
+        for (int ii=0; ii < 2; ii++)
+            for (int jj=0; jj < 2; jj++)
+                for(int kk=0; kk < 2; kk++){
+                    Exl += weight[ii][jj][kk]*Ex_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ex[ix- ii][iy -jj][iz- kk ];
+                    Eyl += weight[ii][jj][kk]*Ey_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ey[ix- ii][iy -jj][iz- kk ];
+                    Ezl += weight[ii][jj][kk]*Ez_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ez[ix- ii][iy -jj][iz -kk ];
+                    Bxl += weight[ii][jj][kk]*Bxn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bxn[ix- ii][iy -jj][iz -kk ];
+                    Byl += weight[ii][jj][kk]*Byn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Byn[ix- ii][iy -jj][iz -kk ];
+                    Bzl += weight[ii][jj][kk]*Bzn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bzn[ix- ii][iy -jj][iz -kk ];
+                }
 
-            for (int ii=0; ii < 2; ii++)
-                for (int jj=0; jj < 2; jj++)
-                    for(int kk=0; kk < 2; kk++){
-                        Exl += weight[ii][jj][kk]*field->Ex[ix- ii][iy -jj][iz- kk ];
-                        Eyl += weight[ii][jj][kk]*field->Ey[ix- ii][iy -jj][iz- kk ];
-                        Ezl += weight[ii][jj][kk]*field->Ez[ix- ii][iy -jj][iz -kk ];
-                        Bxl += weight[ii][jj][kk]*field->Bxn[ix- ii][iy -jj][iz -kk ];
-                        Byl += weight[ii][jj][kk]*field->Byn[ix- ii][iy -jj][iz -kk ];
-                        Bzl += weight[ii][jj][kk]*field->Bzn[ix- ii][iy -jj][iz -kk ];
-                    }
-
-            // end interpolation
-            omdtsq = qomdt2*qomdt2*(Bxl*Bxl+Byl*Byl+Bzl*Bzl);
-            denom = 1.0/(1.0 + omdtsq);
-            // solve the position equation
-            ut= part->u[i] + qomdt2*Exl;
-            vt= part->v[i] + qomdt2*Eyl;
-            wt= part->w[i] + qomdt2*Ezl;
-            udotb = ut*Bxl + vt*Byl + wt*Bzl;
-            // solve the velocity equation
-            uptilde = (ut+qomdt2*(vt*Bzl -wt*Byl + qomdt2*udotb*Bxl))*denom;
-            vptilde = (vt+qomdt2*(wt*Bxl -ut*Bzl + qomdt2*udotb*Byl))*denom;
-            wptilde = (wt+qomdt2*(ut*Byl -vt*Bxl + qomdt2*udotb*Bzl))*denom;
-            // update position
-            part->x[i] = xptilde + uptilde*dto2;
-            part->y[i] = yptilde + vptilde*dto2;
-            part->z[i] = zptilde + wptilde*dto2;
+        // end interpolation
+        omdtsq = qomdt2*qomdt2*(Bxl*Bxl+Byl*Byl+Bzl*Bzl);
+        denom = 1.0/(1.0 + omdtsq);
+        // solve the position equation
+        ut= u[idx] + qomdt2*Exl;
+        vt= v[idx] + qomdt2*Eyl;
+        wt= w[idx] + qomdt2*Ezl;
+        udotb = ut*Bxl + vt*Byl + wt*Bzl;
+        // solve the velocity equation
+        uptilde = (ut+qomdt2*(vt*Bzl -wt*Byl + qomdt2*udotb*Bxl))*denom;
+        vptilde = (vt+qomdt2*(wt*Bxl -ut*Bzl + qomdt2*udotb*Byl))*denom;
+        wptilde = (wt+qomdt2*(ut*Byl -vt*Bxl + qomdt2*udotb*Bzl))*denom;
+        // update position
+        x[idx] = xptilde + uptilde*dto2;
+        y[idx] = yptilde + vptilde*dto2;
+        z[idx] = zptilde + wptilde*dto2;
 
 
-        } // end of iteration
-        // update the final position and velocity
-        part->u[i]= 2.0*uptilde - part->u[i];
-        part->v[i]= 2.0*vptilde - part->v[i];
-        part->w[i]= 2.0*wptilde - part->w[i];
-        part->x[i] = xptilde + uptilde*dt_sub_cycling;
-        part->y[i] = yptilde + vptilde*dt_sub_cycling;
-        part->z[i] = zptilde + wptilde*dt_sub_cycling;
+    } // end of iteration
+    // update the final position and velocity
+    u[idx]= 2.0*uptilde - u[idx];
+    v[idx]= 2.0*vptilde - v[idx];
+    w[idx]= 2.0*wptilde - w[idx];
+    x[idx] = xptilde + uptilde*dt_sub_cycling;
+    y[idx] = yptilde + vptilde*dt_sub_cycling;
+    z[idx] = zptilde + wptilde*dt_sub_cycling;
 
 
-        //////////
-        //////////
-        ////////// BC
+    //////////
+    //////////
+    ////////// BC
 
-        // X-DIRECTION: BC particles
-        if (part->x[i] > grd->Lx){
-            if (param->PERIODICX==true){ // PERIODIC
-                part->x[i] = part->x[i] - grd->Lx;
-            } else { // REFLECTING BC
-                part->u[i] = -part->u[i];
-                part->x[i] = 2*grd->Lx - part->x[i];
-            }
+    // X-DIRECTION: BC particles
+    if (x[idx] > Lx){
+        if (PERIODICX==true){ // PERIODIC
+            x[idx] = x[idx] - Lx;
+        } else { // REFLECTING BC
+            u[idx] = -u[idx];
+            x[idx] = 2*Lx - x[idx];
         }
+    }
 
-        if (part->x[i] < 0){
-            if (param->PERIODICX==true){ // PERIODIC
-               part->x[i] = part->x[i] + grd->Lx;
-            } else { // REFLECTING BC
-                part->u[i] = -part->u[i];
-                part->x[i] = -part->x[i];
-            }
+    if (x[idx] < 0){
+        if (PERIODICX==true){ // PERIODIC
+            x[idx] = x[idx] + Lx;
+        } else { // REFLECTING BC
+            u[idx] = -u[idx];
+            x[idx] = -x[idx];
         }
+    }
 
 
-        // Y-DIRECTION: BC particles
-        if (part->y[i] > grd->Ly){
-            if (param->PERIODICY==true){ // PERIODIC
-                part->y[i] = part->y[i] - grd->Ly;
-            } else { // REFLECTING BC
-                part->v[i] = -part->v[i];
-                part->y[i] = 2*grd->Ly - part->y[i];
-            }
+    // Y-DIRECTION: BC particles
+    if (y[idx] > Ly){
+        if (PERIODICY==true){ // PERIODIC
+            y[idx] = y[idx] - Ly;
+        } else { // REFLECTING BC
+            v[idx] = -v[idx];
+            y[idx] = 2*Ly - y[idx];
         }
+    }
 
-        if (part->y[i] < 0){
-            if (param->PERIODICY==true){ // PERIODIC
-                part->y[i] = part->y[i] + grd->Ly;
-            } else { // REFLECTING BC
-                part->v[i] = -part->v[i];
-                part->y[i] = -part->y[i];
-            }
+    if (y[idx] < 0){
+        if (PERIODICY==true){ // PERIODIC
+            y[idx] = y[idx] + Ly;
+        } else { // REFLECTING BC
+            v[idx] = -v[idx];
+            y[idx] = -y[idx];
         }
+    }
 
-        // Z-DIRECTION: BC particles
-        if (part->z[i] > grd->Lz){
-            if (param->PERIODICZ==true){ // PERIODIC
-                part->z[i] = part->z[i] - grd->Lz;
-            } else { // REFLECTING BC
-                part->w[i] = -part->w[i];
-                part->z[i] = 2*grd->Lz - part->z[i];
-            }
+    // Z-DIRECTION: BC particles
+    if (z[idx] > Lz){
+        if (PERIODICZ==true){ // PERIODIC
+            z[idx] = z[idx] - Lz;
+        } else { // REFLECTING BC
+            w[idx] = -w[idx];
+            z[idx] = 2*Lz - z[idx];
         }
+    }
 
-        if (part->z[i] < 0){
-            if (param->PERIODICZ==true){ // PERIODIC
-                part->z[i] = part->z[i] + grd->Lz;
-            } else { // REFLECTING BC
-                part->w[i] = -part->w[i];
-                part->z[i] = -part->z[i];
-            }
+    if (z[idx] < 0){
+        if (PERIODICZ==true){ // PERIODIC
+            z[idx] = z[idx] + Lz;
+        } else { // REFLECTING BC
+            w[idx] = -w[idx];
+            z[idx] = -z[idx];
         }
+    }
 
 
-
-     // end of one particle
-    } // end of subcycling
 
 }
 
+
+/** particle mover kernel of GPU*/
+int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
+{
+    // print species and subcycling
+    std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
+
+    // auxiliary variables
+    FPpart dt_sub_cycling = (FPpart) param->dt/((double) part->n_sub_cycles);
+    FPpart dto2 = .5*dt_sub_cycling, qomdt2 = part->qom*dto2/param->c;
+
+    //particles
+    FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
+    cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_x, part->x, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_y, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_y, part->y, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_z, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_z, part->z, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_u, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_u, part->u, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_v, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_v, part->v, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    cudaMalloc(&d_w, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_w, part->w, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
+
+    //grid
+    FPfield *d_XN_flat, *d_YN_flat, *d_ZN_flat;
+    cudaMalloc(&d_XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_XN_flat, grd->XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_YN_flat, grd->YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_ZN_flat, grd->ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    //field
+    FPfield *d_Ex_flat, *d_Ey_flat, *d_Ez_flat, *d_Bxn_flat, *d_Byn_flat, *d_Bzn_flat;
+    //E-nodes 
+    cudaMalloc(&d_Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_Ex_flat, field->Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_Ey_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_Ey_flat, field->Ey_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_Ez_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_Ez_flat, field->Ez_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+    //B-nodes
+    cudaMalloc(&d_Bxn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_Bxn_flat, field->Bxn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_Byn_flat, field->Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_Bzn_flat, field->Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    std::cout<<"Before loop"<<std::endl;
+    // start subcycling
+    for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
+        /*call kernel*/
+        particle_kernel<<<(part->npmax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w,
+                                                                d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
+                                                                grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, 
+                                                                grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
+                                                                d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
+                                                                param->PERIODICX, param->PERIODICY, param->PERIODICZ,
+                                                                dt_sub_cycling, dto2, qomdt2, 
+                                                                part->NiterMover, part->npmax);
+	cudaDeviceSynchronize();
+        // move each particle with new fields
+        /*
+        for (int i=0; i <  part->nop; i++){
+            xptilde = part->x[i];
+            yptilde = part->y[i];
+            zptilde = part->z[i];
+            // calculate the average velocity iteratively
+            for(int innter=0; innter < part->NiterMover; innter++){
+                // interpolation G-->P
+                ix = 2 +  int((part->x[i] - grd->xStart)*grd->invdx);
+                iy = 2 +  int((part->y[i] - grd->yStart)*grd->invdy);
+                iz = 2 +  int((part->z[i] - grd->zStart)*grd->invdz);
+
+                // calculate weights
+                xi[0]   = part->x[i] - grd->XN[ix - 1][iy][iz];
+                eta[0]  = part->y[i] - grd->YN[ix][iy - 1][iz];
+                zeta[0] = part->z[i] - grd->ZN[ix][iy][iz - 1];
+                xi[1]   = grd->XN[ix][iy][iz] - part->x[i];
+                eta[1]  = grd->YN[ix][iy][iz] - part->y[i];
+                zeta[1] = grd->ZN[ix][iy][iz] - part->z[i];
+                for (int ii = 0; ii < 2; ii++)
+                    for (int jj = 0; jj < 2; jj++)
+                        for (int kk = 0; kk < 2; kk++)
+                            weight[ii][jj][kk] = xi[ii] * eta[jj] * zeta[kk] * grd->invVOL;
+
+                // set to zero local electric and magnetic field
+                Exl=0.0, Eyl = 0.0, Ezl = 0.0, Bxl = 0.0, Byl = 0.0, Bzl = 0.0;
+
+                for (int ii=0; ii < 2; ii++)
+                    for (int jj=0; jj < 2; jj++)
+                        for(int kk=0; kk < 2; kk++){
+                            Exl += weight[ii][jj][kk]*field->Ex[ix- ii][iy -jj][iz- kk ];
+                            Eyl += weight[ii][jj][kk]*field->Ey[ix- ii][iy -jj][iz- kk ];
+                            Ezl += weight[ii][jj][kk]*field->Ez[ix- ii][iy -jj][iz -kk ];
+                            Bxl += weight[ii][jj][kk]*field->Bxn[ix- ii][iy -jj][iz -kk ];
+                            Byl += weight[ii][jj][kk]*field->Byn[ix- ii][iy -jj][iz -kk ];
+                            Bzl += weight[ii][jj][kk]*field->Bzn[ix- ii][iy -jj][iz -kk ];
+                        }
+
+                // end interpolation
+                omdtsq = qomdt2*qomdt2*(Bxl*Bxl+Byl*Byl+Bzl*Bzl);
+                denom = 1.0/(1.0 + omdtsq);
+                // solve the position equation
+                ut= part->u[i] + qomdt2*Exl;
+                vt= part->v[i] + qomdt2*Eyl;
+                wt= part->w[i] + qomdt2*Ezl;
+                udotb = ut*Bxl + vt*Byl + wt*Bzl;
+                // solve the velocity equation
+                uptilde = (ut+qomdt2*(vt*Bzl -wt*Byl + qomdt2*udotb*Bxl))*denom;
+                vptilde = (vt+qomdt2*(wt*Bxl -ut*Bzl + qomdt2*udotb*Byl))*denom;
+                wptilde = (wt+qomdt2*(ut*Byl -vt*Bxl + qomdt2*udotb*Bzl))*denom;
+                // update position
+                part->x[i] = xptilde + uptilde*dto2;
+                part->y[i] = yptilde + vptilde*dto2;
+                part->z[i] = zptilde + wptilde*dto2;
+
+
+            } // end of iteration
+            // update the final position and velocity
+            part->u[i]= 2.0*uptilde - part->u[i];
+            part->v[i]= 2.0*vptilde - part->v[i];
+            part->w[i]= 2.0*wptilde - part->w[i];
+            part->x[i] = xptilde + uptilde*dt_sub_cycling;
+            part->y[i] = yptilde + vptilde*dt_sub_cycling;
+            part->z[i] = zptilde + wptilde*dt_sub_cycling;
+
+
+            //////////
+            //////////
+            ////////// BC
+
+            // X-DIRECTION: BC particles
+            if (part->x[i] > grd->Lx){
+                if (param->PERIODICX==true){ // PERIODIC
+                    part->x[i] = part->x[i] - grd->Lx;
+                } else { // REFLECTING BC
+                    part->u[i] = -part->u[i];
+                    part->x[i] = 2*grd->Lx - part->x[i];
+                }
+            }
+
+            if (part->x[i] < 0){
+                if (param->PERIODICX==true){ // PERIODIC
+                    part->x[i] = part->x[i] + grd->Lx;
+                } else { // REFLECTING BC
+                    part->u[i] = -part->u[i];
+                    part->x[i] = -part->x[i];
+                }
+            }
+
+
+            // Y-DIRECTION: BC particles
+            if (part->y[i] > grd->Ly){
+                if (param->PERIODICY==true){ // PERIODIC
+                    part->y[i] = part->y[i] - grd->Ly;
+                } else { // REFLECTING BC
+                    part->v[i] = -part->v[i];
+                    part->y[i] = 2*grd->Ly - part->y[i];
+                }
+            }
+
+            if (part->y[i] < 0){
+                if (param->PERIODICY==true){ // PERIODIC
+                    part->y[i] = part->y[i] + grd->Ly;
+                } else { // REFLECTING BC
+                    part->v[i] = -part->v[i];
+                    part->y[i] = -part->y[i];
+                }
+            }
+
+            // Z-DIRECTION: BC particles
+            if (part->z[i] > grd->Lz){
+                if (param->PERIODICZ==true){ // PERIODIC
+                    part->z[i] = part->z[i] - grd->Lz;
+                } else { // REFLECTING BC
+                    part->w[i] = -part->w[i];
+                    part->z[i] = 2*grd->Lz - part->z[i];
+                }
+            }
+
+            if (part->z[i] < 0){
+                if (param->PERIODICZ==true){ // PERIODIC
+                    part->z[i] = part->z[i] + grd->Lz;
+                } else { // REFLECTING BC
+                    part->w[i] = -part->w[i];
+                    part->z[i] = -part->z[i];
+                }
+            }
+
+
+
+        }*/  // end of subcycling
+    } // end of one particle
+    cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->z, d_z, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->u, d_u, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->v, d_v, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->w, d_w, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    //E-nodes
+    cudaMemcpy(field->Ex_flat, d_Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(field->Ey_flat, d_Ey_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(field->Ez_flat, d_Ez_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+    //B-nodes
+    cudaMemcpy(field->Bxn_flat, d_Bxn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(field->Byn_flat, d_Byn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+
+    cudaMemcpy(field->Bzn_flat, d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
+    
+    //free memory
+   
+    cudaFree(d_x);
+    cudaFree(d_y);
+    cudaFree(d_z);
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_w);
+
+    cudaFree(d_XN_flat);
+    cudaFree(d_YN_flat);
+    cudaFree(d_ZN_flat);
+
+    cudaFree(d_Ex_flat);
+    cudaFree(d_Ey_flat);
+    cudaFree(d_Ez_flat);
+    cudaFree(d_Bxn_flat);
+    cudaFree(d_Byn_flat);
+    cudaFree(d_Bzn_flat);
+
+    return(0); // exit succcesfully
+} // end of the mover
+
+
 /** particle mover */
+/*
 int mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)
 {
     // print species and subcycling
@@ -426,7 +673,7 @@ int mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, st
 
     return(0); // exit succcesfully
 } // end of the mover
-
+*/
 
 
 /** Interpolation Particle --> Grid: This is for species */

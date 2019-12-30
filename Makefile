@@ -41,3 +41,5 @@ clean:
 
 run:
 	./bin/sputniPIC.out inputfiles/GEM_2D.inp
+grun:
+	srun -n 1 ./bin/sputniPIC.out inputfiles/GEM_2D.inp
