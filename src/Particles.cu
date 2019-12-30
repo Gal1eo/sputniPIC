@@ -625,21 +625,25 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMemcpy(field->Bzn_flat, d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
     
     //free memory
-    /*
-    delArr1(d_x);
-    delArr1(d_y);
-    delArr1(d_z);
-    delArr1(d_u);
-    delArr1(d_v);
-    delArr1(d_w);
+   
+    cudaFree(d_x);
+    cudaFree(d_y);
+    cudaFree(d_z);
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_w);
 
-    delArr1(d_Ex_flat);
-    delArr1(d_Ey_flat);
-    delArr1(d_Ez_flat);
-    delArr1(d_Bxn_flat);
-    delArr1(d_Byn_flat);
-    delArr1(d_Bzn_flat);
-*/
+    cudaFree(d_XN_flat);
+    cudaFree(d_YN_flat);
+    cudaFree(d_ZN_flat);
+
+    cudaFree(d_Ex_flat);
+    cudaFree(d_Ey_flat);
+    cudaFree(d_Ez_flat);
+    cudaFree(d_Bxn_flat);
+    cudaFree(d_Byn_flat);
+    cudaFree(d_Bzn_flat);
+
     return(0); // exit succcesfully
 } // end of the mover
 
