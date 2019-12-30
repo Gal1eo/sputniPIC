@@ -522,7 +522,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
                                 FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn,
                                 double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
                                 FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp *Jz_flat, FPinterp *rhon_flat,
-                                FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat
+                                FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat,
                                 FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int nop)
 {
     //calculate global index and check boundary
@@ -554,9 +554,9 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++) {
                 // calculate the weights for different nodes
-                weight[ii][jj][kk] = q[i] * xi[ii] * eta[jj] * zeta[kk] * invVOL;
+                weight[ii][jj][kk] = q[idx] * xi[ii] * eta[jj] * zeta[kk] * invVOL;
                 // set temp variable
-                temp[ii][jj][kk] = weight[ii][jj][kk] * grd->invVOL;
+                temp[ii][jj][kk] = weight[ii][jj][kk] * invVOL;
                 // add charge density
                 rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk];
                 // add current density - Jx
@@ -572,11 +572,11 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
                 // add pressure pxz
                 pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * w[idx] * temp[ii][jj][kk];
                 // add pressure pyy
-                pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * v[idx] * temp;
+                pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * v[idx] * temp[ii][jj][kk];
                 // add pressure pyz
-                pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * w[idx] * temp;
+                pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * w[idx] * temp[ii][jj][kk];
                 // add pressure pzz
-                pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * w[idx] * temp;
+                pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * w[idx] * temp[ii][jj][kk];
 
             }
 }
@@ -587,7 +587,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
 {
     //particles
     FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
-    FPinterp *d_q
+    FPinterp* d_q;
     cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
     cudaMemcpy(d_x, part->x, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice);
 
@@ -611,7 +611,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
 
     //ids
     FPinterp *d_Jx_flat, *d_Jy_flat, *d_Jz_flat, *d_rhon_flat;
-    FPinterp *d_pxx_flat, *d_pxy_flat, *d_pxz_flat *d_pyy_flat, *d_pyz_flat, *d_pzz_flat;
+    FPinterp *d_pxx_flat, *d_pxy_flat, *d_pxz_flat, *d_pyy_flat, *d_pyz_flat, *d_pzz_flat;
     cudaMalloc(&d_Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
     cudaMemcpy(d_Jx_flat, ids->Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
@@ -662,7 +662,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
                                 FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat
                                 FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int nop)
      */
-    interP2G_kernel<<<(part->nop + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, d_q
+    interP2G_kernel<<<(part->nop + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, d_q,
             d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, grd->invVOL,
             d_Jx_flat, d_Jy_flat, d_Jz_flat, d_rhon_flat,
@@ -691,7 +691,33 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
     cudaMemcpy(ids->pyy_flat, d_pyy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
     cudaMemcpy(ids->pyz_flat, d_pyz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
     cudaMemcpy(ids->pzz_flat, d_pzz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    
+    //free memory
+    cudaFree(d_x);
+    cudaFree(d_y);
+    cudaFree(d_z);
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_w);
 
+    cudaFree(d_q);
+    
+    cudaFree(d_XN_flat);
+    cudaFree(d_YN_flat);
+    cudaFree(d_ZN_flat);
+    cudaFree(d_rhon_flat);
+    cudaFree(d_pxx_flat);
+    cudaFree(d_pxy_flat);
+    cudaFree(d_pxz_flat);
+    cudaFree(d_pyy_flat);
+    cudaFree(d_pyz_flat);
+    cudaFree(d_pzz_flat);
+
+    cudaFree(d_XN_flat);
+    cudaFree(d_x);
+    cudaFree(d_x);
+    cudaFree(d_x);
+    cudaFree(d_x);
     return;
 }
 
