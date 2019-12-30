@@ -549,7 +549,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
     zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
 
-
+    /*
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++) {
@@ -579,7 +579,136 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
                 pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * w[idx] * temp[ii][jj][kk];
 
             }
+
+    */
+
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                // calculate the weights for different nodes
+                weight[ii][jj][kk] = q[idx] * xi[ii] * eta[jj] * zeta[kk] * invVOL;
+
+
+    //////////////////////////
+    // add charge density
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += weight[ii][jj][kk] * invVOL;
+
+
+    ////////////////////////////
+    // add current density - Jx
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = u[idx] * weight[ii][jj][kk];
+
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                Jx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+    ////////////////////////////
+    // add current density - Jy
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = v[idx] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                Jy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+
+    ////////////////////////////
+    // add current density - Jz
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = w[idx] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                Jz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+    ////////////////////////////
+    // add pressure pxx
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = u[idx] * u[idx] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                pxx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+    ////////////////////////////
+    // add pressure pxy
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = u[idx] * v[idx] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                pxy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+
+    /////////////////////////////
+    // add pressure pxz
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = u[idx] * w[idx] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+    /////////////////////////////
+    // add pressure pyy
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = v[i] * v[i] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+    /////////////////////////////
+    // add pressure pyz
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = v[i] * w[i] * weight[ii][jj][kk];
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
+
+    /////////////////////////////
+    // add pressure pzz
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++)
+                temp[ii][jj][kk] = w[i] * w[i] * weight[ii][jj][kk];
+    for (int ii=0; ii < 2; ii++)
+        for (int jj=0; jj < 2; jj++)
+            for(int kk=0; kk < 2; kk++)
+                pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+
 }
+
 
 
 /** Interpolation kernel of GPU*/
