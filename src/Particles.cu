@@ -677,7 +677,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                temp[ii][jj][kk] = v[i] * v[i] * weight[ii][jj][kk];
+                temp[ii][jj][kk] = v[idx] * v[idx] * weight[ii][jj][kk];
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
@@ -689,7 +689,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                temp[ii][jj][kk] = v[i] * w[i] * weight[ii][jj][kk];
+                temp[ii][jj][kk] = v[idx] * w[idx] * weight[ii][jj][kk];
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
@@ -701,7 +701,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                temp[ii][jj][kk] = w[i] * w[i] * weight[ii][jj][kk];
+                temp[ii][jj][kk] = w[idx] * w[idx] * weight[ii][jj][kk];
     for (int ii=0; ii < 2; ii++)
         for (int jj=0; jj < 2; jj++)
             for(int kk=0; kk < 2; kk++)
