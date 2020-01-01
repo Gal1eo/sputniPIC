@@ -791,7 +791,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
                                 FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat
                                 FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int nop)
      */
-    interP2G_kernel<<<(part->nop + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, d_q,
+    interP2G_kernel<<<(part->npmax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, d_q,
             d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, grd->invVOL,
             d_Jx_flat, d_Jy_flat, d_Jz_flat, d_rhon_flat,
