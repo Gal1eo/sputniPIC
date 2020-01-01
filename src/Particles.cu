@@ -470,7 +470,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                                                                 d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
                                                                 param->PERIODICX, param->PERIODICY, param->PERIODICZ,
                                                                 dt_sub_cycling, dto2, qomdt2, 
-                                                                part->NiterMover, part->npmax);
+                                                                part->NiterMover, part->nop);
 	cudaDeviceSynchronize();
 
     } // end of one particle
@@ -796,7 +796,7 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, grd->invVOL,
             d_Jx_flat, d_Jy_flat, d_Jz_flat, d_rhon_flat,
             d_pxx_flat, d_pxy_flat, d_pxz_flat, d_pyy_flat, d_pyz_flat, d_pzz_flat,
-            part->npmax);
+            part->nop);
 
     cudaDeviceSynchronize();
 
