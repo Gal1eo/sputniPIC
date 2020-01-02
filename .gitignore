@@ -33,4 +33,4 @@ vgcore.*
 *.so
 *.a
 data/
-*.vtk
+

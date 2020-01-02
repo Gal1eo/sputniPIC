@@ -470,8 +470,9 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                                                                 d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
                                                                 param->PERIODICX, param->PERIODICY, param->PERIODICZ,
                                                                 dt_sub_cycling, dto2, qomdt2, 
-                                                                part->NiterMover, part->npmax);
+                                                                part->NiterMover, part->nop);
 	cudaDeviceSynchronize();
+
     } // end of one particle
     cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
     cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
@@ -515,52 +516,85 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     return(0); // exit succcesfully
 } // end of the mover
 
-__global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPpart* q, //DONT FORGET Q
-                                FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn, 
-                                double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz,
-                                double Lx, double Ly, double Lz, FPfield invVOL,
-                                FPinterp* rhon_flat, 
-                                FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp* Jz_flat,
+
+
+__global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPinterp* q,
+                                FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn,
+                                double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
+                                FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp *Jz_flat, FPinterp *rhon_flat,
                                 FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat,
-                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, 
-                                const int nop)
+                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int npmax)
 {
+    //calculate global index and check boundary
     const int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx > nop) return;
+    if(idx >= npmax) return;
+
     // arrays needed for interpolation
     FPpart weight[2][2][2];
     FPpart temp[2][2][2];
     FPpart xi[2], eta[2], zeta[2];
 
-    // index of the cell
+    // 3-D index of the cell
     int ix, iy, iz;
 
-
-    // determine cell: can we change to int()? is it faster?
     ix = 2 + int (floor((x[idx] - xStart) * invdx));
     iy = 2 + int (floor((y[idx] - yStart) * invdy));
     iz = 2 + int (floor((z[idx] - zStart) * invdz));
 
     // distances from node
-    xi[0]   = x[idx] - XN_flat[get_idx(ix-1, iy, iz, nyn, nzn)];
-    eta[0]  = y[idx] - YN_flat[get_idx(ix, iy-1, iz, nyn, nzn)];
-    zeta[0] = z[idx] - ZN_flat[get_idx(ix, iy, iz-1, nyn, nzn)];
-    xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];
-    eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];
-    zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];
+    xi[0]   = x[idx] - XN_flat[get_idx(ix-1, iy, iz, nyn, nzn)];//grd->XN[ix - 1][iy][iz];
+    eta[0]  = y[idx] - YN_flat[get_idx(ix, iy-1, iz, nyn, nzn)];//grd->YN[ix][iy - 1][iz];
+    zeta[0] = z[idx] - ZN_flat[get_idx(ix, iy, iz-1, nyn, nzn)];//grd->ZN[ix][iy][iz - 1];
+    xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];//grd->XN[ix][iy][iz] - x[i];
+    eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
+    zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
 
-    // calculate the weights for different nodes
+    /*
+    for (int ii = 0; ii < 2; ii++)
+        for (int jj = 0; jj < 2; jj++)
+            for (int kk = 0; kk < 2; kk++) {
+                // calculate the weights for different nodes
+                weight[ii][jj][kk] = q[idx] * xi[ii] * eta[jj] * zeta[kk] * invVOL;
+                // set temp variable
+                temp[ii][jj][kk] = weight[ii][jj][kk] * invVOL;
+                // add charge density
+                rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk];
+                // add current density - Jx
+                Jx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * temp[ii][jj][kk];
+                // add current density - Jy
+                Jy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * temp[ii][jj][kk];
+                // add current density - Jz
+                Jz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * temp[ii][jj][kk];
+                // add pressure pxx
+                pxx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * u[idx] * temp[ii][jj][kk];
+                // add pressure pxy
+                pxy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * v[idx] * temp[ii][jj][kk];
+                // add pressure pxz
+                pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * w[idx] * temp[ii][jj][kk];
+                // add pressure pyy
+                pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * v[idx] * temp[ii][jj][kk];
+                // add pressure pyz
+                pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * w[idx] * temp[ii][jj][kk];
+                // add pressure pzz
+                pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * w[idx] * temp[ii][jj][kk];
+
+            }
+
+    */
+
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
+                // calculate the weights for different nodes
                 weight[ii][jj][kk] = q[idx] * xi[ii] * eta[jj] * zeta[kk] * invVOL;
+
 
     //////////////////////////
     // add charge density
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                rhon_flat[ix - ii][iy - jj][iz - kk] += weight[ii][jj][kk] * invVOL;
+                atomicAdd(&rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], weight[ii][jj][kk] * invVOL);
 
 
     ////////////////////////////
@@ -573,7 +607,7 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                Jx_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&Jx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     ////////////////////////////
@@ -585,10 +619,10 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                Jy_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
-    
+                atomicAdd(&Jy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
+
     ////////////////////////////
     // add current density - Jz
     for (int ii = 0; ii < 2; ii++)
@@ -598,9 +632,9 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                Jz_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
+                atomicAdd(&Jz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
     ////////////////////////////
     // add pressure pxx
     for (int ii = 0; ii < 2; ii++)
@@ -610,9 +644,9 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pxx_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
+                atomicAdd(&pxx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
     ////////////////////////////
     // add pressure pxy
     for (int ii = 0; ii < 2; ii++)
@@ -622,10 +656,10 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pxy_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
-    
+                atomicAdd(&pxy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
+
     /////////////////////////////
     // add pressure pxz
     for (int ii = 0; ii < 2; ii++)
@@ -635,9 +669,9 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pxz_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
+                atomicAdd(&pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
     /////////////////////////////
     // add pressure pyy
     for (int ii = 0; ii < 2; ii++)
@@ -647,9 +681,9 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pyy_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
+                atomicAdd(&pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
     /////////////////////////////
     // add pressure pyz
     for (int ii = 0; ii < 2; ii++)
@@ -659,9 +693,9 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pyz_flat[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * invVOL;
-    
-    
+                atomicAdd(&pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
+
+
     /////////////////////////////
     // add pressure pzz
     for (int ii = 0; ii < 2; ii++)
@@ -671,182 +705,146 @@ __global__ void interp_kernel(  FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii=0; ii < 2; ii++)
         for (int jj=0; jj < 2; jj++)
             for(int kk=0; kk < 2; kk++)
-                pzz_flat[ix -ii][iy -jj][iz - kk] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
-    
 }
 
-/** Interpolation Particle --> Grid: This is for species */
+
+
+/** Interpolation kernel of GPU*/
 void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct grid* grd)
 {
+    //particles
+    FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
+    FPinterp* d_q;
+    cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_x, part->x, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice);
 
-    interp_kernel<<<, >>>(      FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPpart* q, //DONT FORGET Q
-                                FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn, 
-                                double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz,
-                                double Lx, double Ly, double Lz, FPfield invVOL,
-                                FPinterp* rhon_flat, 
-                                FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp* Jz_flat,
-                                FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat,
-                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, 
-                                const int nop);
-   
-}
+    cudaMalloc(&d_y, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_y, part->y, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice);
 
-/** Interpolation Particle --> Grid: This is for species */
-void cpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct grid* grd)
-{
+    cudaMalloc(&d_z, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_z, part->z, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice);
 
-    // arrays needed for interpolation
-    FPpart weight[2][2][2];
-    FPpart temp[2][2][2];
-    FPpart xi[2], eta[2], zeta[2];
+    cudaMalloc(&d_u, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_u, part->u, part->npmax* sizeof(FPpart), cudaMemcpyHostToDevice);
 
-    // index of the cell
-    int ix, iy, iz;
+    cudaMalloc(&d_v, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_v, part->v, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice);
 
+    cudaMalloc(&d_w, part->npmax * sizeof(FPpart));
+    cudaMemcpy(d_w, part->w, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice);
 
-    for (register long long i = 0; i < part->nop; i++) {
+    cudaMalloc(&d_q, part->npmax * sizeof(FPinterp));
+    cudaMemcpy(d_q, part->q, part->npmax * sizeof(FPinterp), cudaMemcpyHostToDevice);
 
-        // determine cell: can we change to int()? is it faster?
-        ix = 2 + int (floor((part->x[i] - grd->xStart) * grd->invdx));
-        iy = 2 + int (floor((part->y[i] - grd->yStart) * grd->invdy));
-        iz = 2 + int (floor((part->z[i] - grd->zStart) * grd->invdz));
+    //ids
+    FPinterp *d_Jx_flat, *d_Jy_flat, *d_Jz_flat, *d_rhon_flat;
+    FPinterp *d_pxx_flat, *d_pxy_flat, *d_pxz_flat, *d_pyy_flat, *d_pyz_flat, *d_pzz_flat;
+    cudaMalloc(&d_Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_Jx_flat, ids->Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-        // distances from node
-        xi[0]   = part->x[i] - grd->XN[ix - 1][iy][iz];
-        eta[0]  = part->y[i] - grd->YN[ix][iy - 1][iz];
-        zeta[0] = part->z[i] - grd->ZN[ix][iy][iz - 1];
-        xi[1]   = grd->XN[ix][iy][iz] - part->x[i];
-        eta[1]  = grd->YN[ix][iy][iz] - part->y[i];
-        zeta[1] = grd->ZN[ix][iy][iz] - part->z[i];
+    cudaMalloc(&d_Jy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_Jy_flat, ids->Jy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-        // calculate the weights for different nodes
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    weight[ii][jj][kk] = part->q[i] * xi[ii] * eta[jj] * zeta[kk] * grd->invVOL;
+    cudaMalloc(&d_Jz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_Jz_flat, ids->Jz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-        //////////////////////////
-        // add charge density
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->rhon[ix - ii][iy - jj][iz - kk] += weight[ii][jj][kk] * grd->invVOL;
+    cudaMalloc(&d_rhon_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_rhon_flat, ids->rhon_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
+    cudaMalloc(&d_pxx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_pxx_flat, ids->pxx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-        ////////////////////////////
-        // add current density - Jx
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->u[i] * weight[ii][jj][kk];
+    cudaMalloc(&d_pxy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_pxy_flat, ids->pxy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->Jx[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
+    cudaMalloc(&d_pxz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_pxz_flat, ids->pxz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_pyy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_pyy_flat, ids->pyy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_pyz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_pyz_flat, ids->pyz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_pzz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp));
+    cudaMemcpy(d_pzz_flat, ids->pzz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    //grid
+    FPfield *d_XN_flat, *d_YN_flat, *d_ZN_flat;
+    cudaMalloc(&d_XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_XN_flat, grd->XN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_YN_flat, grd->YN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
+
+    cudaMalloc(&d_ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
+    cudaMemcpy(d_ZN_flat, grd->ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
 
-        ////////////////////////////
-        // add current density - Jy
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->v[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->Jy[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        
-        ////////////////////////////
-        // add current density - Jz
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->w[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->Jz[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        ////////////////////////////
-        // add pressure pxx
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->u[i] * part->u[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->pxx[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        ////////////////////////////
-        // add pressure pxy
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->u[i] * part->v[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->pxy[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        
-        /////////////////////////////
-        // add pressure pxz
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->u[i] * part->w[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->pxz[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        /////////////////////////////
-        // add pressure pyy
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->v[i] * part->v[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->pyy[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        /////////////////////////////
-        // add pressure pyz
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->v[i] * part->w[i] * weight[ii][jj][kk];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    ids->pyz[ix - ii][iy - jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
-        
-        
-        /////////////////////////////
-        // add pressure pzz
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    temp[ii][jj][kk] = part->w[i] * part->w[i] * weight[ii][jj][kk];
-        for (int ii=0; ii < 2; ii++)
-            for (int jj=0; jj < 2; jj++)
-                for(int kk=0; kk < 2; kk++)
-                    ids->pzz[ix -ii][iy -jj][iz - kk] += temp[ii][jj][kk] * grd->invVOL;
+    /*
+     __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPinterp* q,
+                                FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn,
+                                double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
+                                FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp *Jz_flat, FPinterp *rhon_flat,
+                                FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat
+                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int nop)
+     */
+    interP2G_kernel<<<(part->npmax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, d_q,
+            d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
+            grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, grd->invVOL,
+            d_Jx_flat, d_Jy_flat, d_Jz_flat, d_rhon_flat,
+            d_pxx_flat, d_pxy_flat, d_pxz_flat, d_pyy_flat, d_pyz_flat, d_pzz_flat,
+            part->nop);
+
+    cudaDeviceSynchronize();
+
+    //particle
+    /*
+    cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->z, d_z, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->u, d_u, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->v, d_v, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->w, d_w, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    cudaMemcpy(part->q, d_q, part->npmax * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    */
+    //ids
+    cudaMemcpy(ids->Jx_flat, d_Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->Jy_flat, d_Jy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->Jz_flat, d_Jz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->rhon_flat, d_rhon_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->pxx_flat, d_pxx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->pxy_flat, d_pxy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->pxz_flat, d_pxz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->pyy_flat, d_pyy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->pyz_flat, d_pyz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ids->pzz_flat, d_pzz_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
     
-    }
-   
+    //free memory
+    cudaFree(d_x);
+    cudaFree(d_y);
+    cudaFree(d_z);
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_w);
+    cudaFree(d_q);
+    cudaFree(d_XN_flat);
+    cudaFree(d_YN_flat);
+    cudaFree(d_ZN_flat);
+    cudaFree(d_rhon_flat);
+    cudaFree(d_pxx_flat);
+    cudaFree(d_pxy_flat);
+    cudaFree(d_pxz_flat);
+    cudaFree(d_pyy_flat);
+    cudaFree(d_pyz_flat);
+    cudaFree(d_pzz_flat);
+
+    return;
 }
+
+
 /** Interpolation Particle --> Grid: This is for species */
 void interpP2G(struct particles* part, struct interpDensSpecies* ids, struct grid* grd)
 {
