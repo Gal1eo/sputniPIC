@@ -594,7 +594,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += weight[ii][jj][kk] * invVOL;
+                atomicAdd(&rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], weight[ii][jj][kk] * invVOL);
 
 
     ////////////////////////////
@@ -607,7 +607,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                Jx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&Jx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     ////////////////////////////
@@ -619,7 +619,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                Jy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&Jy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
 
@@ -632,7 +632,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                Jz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&Jz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     ////////////////////////////
@@ -644,7 +644,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pxx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pxx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     ////////////////////////////
@@ -656,7 +656,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pxy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pxy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
 
@@ -669,7 +669,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     /////////////////////////////
@@ -681,7 +681,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     /////////////////////////////
@@ -693,7 +693,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
             for (int kk = 0; kk < 2; kk++)
-                pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 
     /////////////////////////////
@@ -705,7 +705,7 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     for (int ii=0; ii < 2; ii++)
         for (int jj=0; jj < 2; jj++)
             for(int kk=0; kk < 2; kk++)
-                pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk] * invVOL;
+                atomicAdd(&pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)], temp[ii][jj][kk] * invVOL);
 
 }
 
