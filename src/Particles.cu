@@ -407,25 +407,6 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     FPpart dt_sub_cycling = (FPpart) param->dt/((double) part->n_sub_cycles);
     FPpart dto2 = .5*dt_sub_cycling, qomdt2 = part->qom*dto2/param->c;
 
-    //particles
-    FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
-    cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
-    cudaMemcpy(d_x, part->x, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
-
-    cudaMalloc(&d_y, part->npmax * sizeof(FPpart));
-    cudaMemcpy(d_y, part->y, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
-
-    cudaMalloc(&d_z, part->npmax * sizeof(FPpart));
-    cudaMemcpy(d_z, part->z, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
-
-    cudaMalloc(&d_u, part->npmax * sizeof(FPpart));
-    cudaMemcpy(d_u, part->u, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
-
-    cudaMalloc(&d_v, part->npmax * sizeof(FPpart));
-    cudaMemcpy(d_v, part->v, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
-
-    cudaMalloc(&d_w, part->npmax * sizeof(FPpart));
-    cudaMemcpy(d_w, part->w, part->npmax * sizeof(FPpart), cudaMemcpyHostToDevice); 
 
     //grid
     FPfield *d_XN_flat, *d_YN_flat, *d_ZN_flat;
@@ -459,27 +440,70 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMalloc(&d_Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield));
     cudaMemcpy(d_Bzn_flat, field->Bzn_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
-    std::cout<<"Before loop"<<std::endl;
-    // start subcycling
-    for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
-        /*call kernel*/
-        particle_kernel<<<(part->npmax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w,
-                                                                d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
-                                                                grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, 
-                                                                grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
-                                                                d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
-                                                                param->PERIODICX, param->PERIODICY, param->PERIODICZ,
-                                                                dt_sub_cycling, dto2, qomdt2, 
-                                                                part->NiterMover, part->nop);
-	cudaDeviceSynchronize();
+    size_t *free_memory, *total_memory;
+    cudaMemGetInfo(free_memory, total_memory);
+    std::cout<<"Free:"<<*free_memory<<" , Total:"<<*total_memory<<std::endl;
 
-    } // end of one particle
-    cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->z, d_z, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->u, d_u, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->v, d_v, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->w, d_w, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
+    FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
+
+    const int split = part->npmax / 3;
+    int split_index = 0;
+
+    cudaMalloc(&d_x, batch_size);
+    cudaMalloc(&d_y, batch_size);
+    cudaMalloc(&d_z, batch_size);
+    cudaMalloc(&d_u, batch_size);
+    cudaMalloc(&d_v, batch_size);
+    cudaMalloc(&d_w, batch_size);
+
+    while(true)
+    {
+        const int to = split_index + split - 1 > part->npmax - 1 ? split_index + split - 1 : part->npmax - 1;      
+
+
+        size_t batch_size = (to - split_index + 1) * sizeof(FPpart);
+
+        //particles
+        cudaMemcpy(d_x[split_index:to], part->x[split_index: to], batch_size, cudaMemcpyHostToDevice); 
+
+        cudaMemcpy(d_y[split_index:to], part->y[split_index:to], batch_size, cudaMemcpyHostToDevice); 
+
+        cudaMemcpy(d_z[split_index:to], part->z[split_index:to], batch_size, cudaMemcpyHostToDevice); 
+
+        cudaMemcpy(d_u[split_index:to], part->u[split_index:to], batch_size, cudaMemcpyHostToDevice); 
+
+        cudaMemcpy(d_v[split_index:to], part->v[split_index:to], batch_size, cudaMemcpyHostToDevice); 
+
+        cudaMemcpy(d_w[split_index:to], part->w[split_index:to], batch_size, cudaMemcpyHostToDevice); 
+
+        std::cout<<"Before loop"<<" Batch idxs:"<<split_index<<":"<<to<<std::endl;
+        // start subcycling
+        for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
+            /*call kernel*/
+            particle_kernel<<<(batch_size + TPB - 1)/TPB, TPB>>>(   d_x, d_y, d_z, d_u, d_v, d_w,
+                                                                    d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
+                                                                    grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, 
+                                                                    grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
+                                                                    d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
+                                                                    param->PERIODICX, param->PERIODICY, param->PERIODICZ,
+                                                                    dt_sub_cycling, dto2, qomdt2, 
+                                                                    part->NiterMover, batch_size);
+            cudaDeviceSynchronize();
+
+        } // end of one particle
+
+        cudaMemcpy(part->x[split_index:to], d_x[split_index:to], batch_size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(part->y[split_index:to], d_y[split_index:to], batch_size , cudaMemcpyDeviceToHost);
+        cudaMemcpy(part->z[split_index:to], d_z[split_index:to], batch_size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(part->u[split_index:to], d_u[split_index:to], batch_size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(part->v[split_index:to], d_v[split_index:to], batch_size, cudaMemcpyDeviceToHost);
+        cudaMemcpy(part->w[split_index:to], d_w[split_index:to], batch_size, cudaMemcpyDeviceToHost);
+        
+        if (to == part->npmax)
+            break;
+
+    }
+    
     //E-nodes
     cudaMemcpy(field->Ex_flat, d_Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
 
