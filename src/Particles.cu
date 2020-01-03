@@ -4,6 +4,8 @@
 #include <cuda_runtime.h>
 #define TPB 64
 #define TOTAL 10000
+#define K 4
+
 /** allocate particle arrays */
 void particle_allocate(struct parameters* param, struct particles* part, int is)
 {
@@ -445,7 +447,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     std::cout<<"Free:"<<free_memory<<" , Total:"<<total_memory<<std::endl;
 
 
-    const long int split = part->npmax / 4;
+    const long int split = part->npmax / K;
     int split_index = 0;
 
 
@@ -453,8 +455,9 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     {
         const long int to = split_index + split - 1 < part->npmax - 1 ? split_index + split - 1 : part->npmax - 1;      
 
-
+        const int n_particles = to - split_index + 1;
         size_t batch_size = (to - split_index + 1) * sizeof(FPpart);
+        
 
         FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
         cudaMalloc(&d_x, batch_size);
@@ -470,24 +473,25 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
         cudaMemcpy(d_y, part->y+split_index, batch_size, cudaMemcpyHostToDevice); 
 
         cudaMemcpy(d_z, part->z+split_index, batch_size, cudaMemcpyHostToDevice); 
+ 
         cudaMemcpy(d_u, part->u+split_index, batch_size, cudaMemcpyHostToDevice); 
 
         cudaMemcpy(d_v, part->v+split_index, batch_size, cudaMemcpyHostToDevice); 
 
         cudaMemcpy(d_w, part->w+split_index, batch_size, cudaMemcpyHostToDevice); 
 
-        std::cout<<"Before loop"<<". Batch idxs:"<<split_index<<":"<<to<<". # of elems:"<<batch_size / sizeof(FPpart)<<std::endl;
+        std::cout<<"Before loop"<<". Batch idxs:"<<split_index<<":"<<to<<". # of elems:"<<n_particles<<std::endl;
         // start subcycling
         for (int i_sub=0; i_sub <  part->n_sub_cycles; i_sub++){
             /*call kernel*/
-            particle_kernel<<<(batch_size / sizeof(FPpart) + TPB - 1)/TPB, TPB>>>(   d_x, d_y, d_z, d_u, d_v, d_w,
+            particle_kernel<<<(n_particles + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w,
                                                                     d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
                                                                     grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, 
                                                                     grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
                                                                     d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
                                                                     param->PERIODICX, param->PERIODICY, param->PERIODICZ,
                                                                     dt_sub_cycling, dto2, qomdt2, 
-                                                                    part->NiterMover, batch_size / sizeof(FPpart) );
+                                                                    part->NiterMover, n_particles );
             cudaDeviceSynchronize();
 
         } // end of one particle
@@ -575,39 +579,6 @@ __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];//grd->XN[ix][iy][iz] - x[i];
     eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
     zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
-
-    /*
-    for (int ii = 0; ii < 2; ii++)
-        for (int jj = 0; jj < 2; jj++)
-            for (int kk = 0; kk < 2; kk++) {
-                // calculate the weights for different nodes
-                weight[ii][jj][kk] = q[idx] * xi[ii] * eta[jj] * zeta[kk] * invVOL;
-                // set temp variable
-                temp[ii][jj][kk] = weight[ii][jj][kk] * invVOL;
-                // add charge density
-                rhon_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += temp[ii][jj][kk];
-                // add current density - Jx
-                Jx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * temp[ii][jj][kk];
-                // add current density - Jy
-                Jy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * temp[ii][jj][kk];
-                // add current density - Jz
-                Jz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * temp[ii][jj][kk];
-                // add pressure pxx
-                pxx_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * u[idx] * temp[ii][jj][kk];
-                // add pressure pxy
-                pxy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * v[idx] * temp[ii][jj][kk];
-                // add pressure pxz
-                pxz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += u[idx] * w[idx] * temp[ii][jj][kk];
-                // add pressure pyy
-                pyy_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * v[idx] * temp[ii][jj][kk];
-                // add pressure pyz
-                pyz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += v[idx] * w[idx] * temp[ii][jj][kk];
-                // add pressure pzz
-                pzz_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn, nzn)] += w[idx] * w[idx] * temp[ii][jj][kk];
-
-            }
-
-    */
 
     for (int ii = 0; ii < 2; ii++)
         for (int jj = 0; jj < 2; jj++)
@@ -810,14 +781,6 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
     cudaMemcpy(d_ZN_flat, grd->ZN_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyHostToDevice);
 
 
-    /*
-     __global__ void interP2G_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPinterp* q,
-                                FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn,
-                                double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
-                                FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp *Jz_flat, FPinterp *rhon_flat,
-                                FPinterp* pxx_flat, FPinterp* pxy_flat, FPinterp* pxz_flat
-                                FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat, const int nop)
-     */
     interP2G_kernel<<<(part->npmax + TPB - 1)/TPB, TPB>>>(  d_x, d_y, d_z, d_u, d_v, d_w, d_q,
             d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz, grd->invVOL,
@@ -827,16 +790,6 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
 
     cudaDeviceSynchronize();
 
-    //particle
-    /*
-    cudaMemcpy(part->x, d_x, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->y, d_y, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->z, d_z, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->u, d_u, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->v, d_v, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->w, d_w, part->npmax * sizeof(FPpart), cudaMemcpyDeviceToHost);
-    cudaMemcpy(part->q, d_q, part->npmax * sizeof(FPinterp), cudaMemcpyDeviceToHost);
-    */
     //ids
     cudaMemcpy(ids->Jx_flat, d_Jx_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
     cudaMemcpy(ids->Jy_flat, d_Jy_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPinterp), cudaMemcpyDeviceToHost);
