@@ -5,6 +5,7 @@
 #define TPB 64
 #define TOTAL 10000
 #define K 4
+#define MAX_GPU_PARTICILES 100
 
 /** allocate particle arrays */
 void particle_allocate(struct parameters* param, struct particles* part, int is)
@@ -447,13 +448,13 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     std::cout<<"Free:"<<free_memory<<" , Total:"<<total_memory<<std::endl;
 
 
-    const long int split = part->npmax / K;
+    //const long int split = part->npmax / K;
     int split_index = 0;
 
 
     while(true)
     {
-        const long int to = split_index + split - 1 < part->npmax - 1 ? split_index + split - 1 : part->npmax - 1;      
+        const long int to = split_index + MAX_GPU_PARTICILES - 1 < part->npmax - 1 ? split_index + MAX_GPU_PARTICILES - 1 : part->npmax - 1;
 
         const int n_particles = to - split_index + 1;
         size_t batch_size = (to - split_index + 1) * sizeof(FPpart);
@@ -503,7 +504,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
         cudaMemcpy(part->v+split_index, d_v, batch_size, cudaMemcpyDeviceToHost);
         cudaMemcpy(part->w+split_index, d_w, batch_size, cudaMemcpyDeviceToHost);
         
-        split_index += split;
+        split_index += MAX_GPU_PARTICILES;
 
         cudaFree(d_x);
         cudaFree(d_y);
