@@ -5,7 +5,7 @@
 #define TPB 64
 #define TOTAL 10000
 #define K 4
-#define MAX_GPU_PARTICILES 100
+#define MAX_GPU_PARTICILES 10000
 
 /** allocate particle arrays */
 void particle_allocate(struct parameters* param, struct particles* part, int is)
