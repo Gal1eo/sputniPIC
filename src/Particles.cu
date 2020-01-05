@@ -423,7 +423,7 @@ __global__ void particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPp
 
 
 /** particle mover kernel of GPU*/
-int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param, cudaStream_t* stream_index, bool useStream)
+int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param, bool useStream)
 {
     // print species and subcycling
     std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
@@ -469,7 +469,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMemGetInfo(&free_memory, &total_memory);
     std::cout<<"Free:"<<free_memory<<" , Total:"<<total_memory<<std::endl;
 
-
+ 
     //const long int split = part->npmax / K;
     long int split_index = 0;
 
@@ -516,7 +516,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                         param->PERIODICX, param->PERIODICY, param->PERIODICZ,
                         dt_sub_cycling, dto2, qomdt2,
                         part->NiterMover, n_particles);
-
+			cudaDeviceSynchronize();
 
             } // end of one particle
 
@@ -526,11 +526,28 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
             cudaMemcpy(part->u + split_index, d_u, batch_size, cudaMemcpyDeviceToHost);
             cudaMemcpy(part->v + split_index, d_v, batch_size, cudaMemcpyDeviceToHost);
             cudaMemcpy(part->w + split_index, d_w, batch_size, cudaMemcpyDeviceToHost);
-        }
+            
+    	split_index += MAX_GPU_PARTICILES;
+
+        cudaFree(d_x);
+        cudaFree(d_y);
+        cudaFree(d_z);
+        cudaFree(d_u);
+        cudaFree(d_v);
+        cudaFree(d_w);
+        
+        if (to == part->npmax - 1)
+            break;
+
+
+	 }
+	
         else{
-            // If batch_size <= STREAM_SIZE, n_streams = 1, and whole batch is done in one stream
+            //createStreams(&streams);
+	    // If batch_size <= STREAM_SIZE, n_streams = 1, and whole batch is done in one stream
             const long batch_size = to - split_index + 1;
             int n_streams = (batch_size + STREAM_SIZE - 1) / STREAM_SIZE;
+            cudaStream_t stream_index[n_streams];
             for (int stream_idx = 0; stream_idx < n_streams; stream_idx++)
             {
 
@@ -539,7 +556,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                 long particle_idx = split_index + stream_idx * stream_end;
                 const long n_particles = stream_end - stream_start;
                 size_t stream_size = n_particles * sizeof(FPpart);
-
+		cudaStreamCreate(&stream_index[stream_idx]);
 
                 FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
                 cudaMalloc(&d_x, stream_size);
@@ -561,7 +578,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                           << "Stream index:" << particle_idx << std::endl;
                 // start subcycling
                 for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
-                    /*call kernel*/
+                    //call kernel
                     particle_kernel << < (n_particles + TPB - 1) / TPB, TPB, 0, stream_index[stream_idx] >> > (d_x, d_y, d_z, d_u, d_v, d_w,
                             d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
                             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz,
@@ -584,10 +601,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 
                 // Copy back
 
-            }
-        }
-        cudaDeviceSynchronize();
-        split_index += MAX_GPU_PARTICILES;
+        
 
         cudaFree(d_x);
         cudaFree(d_y);
@@ -595,10 +609,20 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
         cudaFree(d_u);
         cudaFree(d_v);
         cudaFree(d_w);
-        
+		}
+	cudaDeviceSynchronize();
+	for(int i = 0; i < n_streams; i++){
+		cudaStreamDestroy(stream_index[i]);
+	}
+	split_index += MAX_GPU_PARTICILES;
         if (to == part->npmax - 1)
             break;
 
+
+        }
+	
+       
+        
     }
     
     //E-nodes

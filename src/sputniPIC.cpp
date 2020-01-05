@@ -75,8 +75,8 @@ int main(int argc, char **argv){
     initGEM(&param,&grd,&field,&field_aux,part,ids);
 
     // Create streams
-    cudaStream_t* streams;
-    createStreams(&streams);
+    //cudaStream_t* streams;
+    //cudaStreamCreate(&streams);
 
     
     // **********************************************************//
@@ -98,7 +98,7 @@ int main(int argc, char **argv){
         iMover = cpuSecond(); // start timer for mover
         //mover_PC(&part, &field, &grd, &param);
         for (int is=0; is < param.ns; is++)
-            gpu_mover_PC(&part[is], &field, &grd, &param, &streams, true);
+            gpu_mover_PC(&part[is], &field, &grd, &param, true);
         eMover += (cpuSecond() - iMover); // stop timer for mover
         
 
@@ -143,7 +143,7 @@ int main(int argc, char **argv){
         interp_dens_species_deallocate(&grd,&ids[is]);
         particle_deallocate(&part[is], true);
     }
-    
+    //cudaStreamDestroy(streams);
     
     // stop timer
     double iElaps = cpuSecond() - iStart;
