@@ -8,7 +8,7 @@
 #define MAX_GPU_PARTICILES 10000
 
 /** allocate particle arrays */
-void particle_allocate(struct parameters* param, struct particles* part, int is)
+void particle_allocate(struct parameters* param, struct particles* part, int is, bool pinMemory)
 {
     
     // set species ID
@@ -52,30 +52,50 @@ void particle_allocate(struct parameters* param, struct particles* part, int is)
     //////////////////////////////
     /// ALLOCATION PARTICLE ARRAYS
     //////////////////////////////
-    part->x = new FPpart[npmax];
-    part->y = new FPpart[npmax];
-    part->z = new FPpart[npmax];
-    // allocate velocity
-    part->u = new FPpart[npmax];
-    part->v = new FPpart[npmax];
-    part->w = new FPpart[npmax];
-    // allocate charge = q * statistical weight
-    part->q = new FPinterp[npmax];
-    
+    if(!pinMemory) {
+        part->x = new FPpart[npmax];
+        part->y = new FPpart[npmax];
+        part->z = new FPpart[npmax];
+        // allocate velocity
+        part->u = new FPpart[npmax];
+        part->v = new FPpart[npmax];
+        part->w = new FPpart[npmax];
+
+        // allocate charge = q * statistical weight
+        part->q = new FPinterp[npmax];
+    }
+    else {
+        cudaHostAlloc(&part->x, sizeof(FPpart) * npmax, cudaHostAllocDefault);
+        cudaHostAlloc(&part->y, sizeof(FPpart) * npmax, cudaHostAllocDefault);
+        cudaHostAlloc(&part->z, sizeof(FPpart) * npmax, cudaHostAllocDefault);
+        cudaHostAlloc(&part->u, sizeof(FPpart) * npmax, cudaHostAllocDefault);
+        cudaHostAlloc(&part->v, sizeof(FPpart) * npmax, cudaHostAllocDefault);
+        cudaHostAlloc(&part->w, sizeof(FPpart) * npmax, cudaHostAllocDefault);
+        cudaHostAlloc(&part->q, sizeof(FPinterp) * npmax, cudaHostAllocDefault);
+    }
 }
 /** deallocate */
-void particle_deallocate(struct particles* part)
-{
-    // deallocate particle variables
-    delete[] part->x;
-    delete[] part->y;
-    delete[] part->z;
-    delete[] part->u;
-    delete[] part->v;
-    delete[] part->w;
-    delete[] part->q;
+void particle_deallocate(struct particles* part, bool pinMemory) {
+    if (!pinMemory) {
+        // deallocate particle variables
+        delete[] part->x;
+        delete[] part->y;
+        delete[] part->z;
+        delete[] part->u;
+        delete[] part->v;
+        delete[] part->w;
+        delete[] part->q;
+    }
+    else{
+        cudaFreeHost(part->x);
+        cudaFreeHost(part->y);
+        cudaFreeHost(part->z);
+        cudaFreeHost(part->u);
+        cudaFreeHost(part->v);
+        cudaFreeHost(part->w);
+        cudaFreeHost(part->q);
+    }
 }
-
 
 /** single cpu mover */
 int cpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param)

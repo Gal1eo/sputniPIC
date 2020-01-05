@@ -68,7 +68,7 @@ int main(int argc, char **argv){
     particles *part = new particles[param.ns];
     // allocation
     for (int is=0; is < param.ns; is++){
-        particle_allocate(&param,&part[is],is);
+        particle_allocate(&param,&part[is],is, true);
     }
     
     // Initialization
@@ -137,7 +137,7 @@ int main(int argc, char **argv){
     // Deallocate interpolated densities and particles
     for (int is=0; is < param.ns; is++){
         interp_dens_species_deallocate(&grd,&ids[is]);
-        particle_deallocate(&part[is]);
+        particle_deallocate(&part[is], true);
     }
     
     
