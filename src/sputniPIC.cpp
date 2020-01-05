@@ -73,7 +73,11 @@ int main(int argc, char **argv){
     
     // Initialization
     initGEM(&param,&grd,&field,&field_aux,part,ids);
-    
+
+    // Create streams
+    cudaStream_t* streams;
+    createStreams(&streams);
+
     
     // **********************************************************//
     // **** Start the Simulation!  Cycle index start from 1  *** //
@@ -94,7 +98,7 @@ int main(int argc, char **argv){
         iMover = cpuSecond(); // start timer for mover
         //mover_PC(&part, &field, &grd, &param);
         for (int is=0; is < param.ns; is++)
-            gpu_mover_PC(&part[is], &field, &grd, &param, true);
+            gpu_mover_PC(&part[is], &field, &grd, &param, &streams, true);
         eMover += (cpuSecond() - iMover); // stop timer for mover
         
 

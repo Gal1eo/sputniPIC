@@ -423,7 +423,7 @@ __global__ void particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPp
 
 
 /** particle mover kernel of GPU*/
-int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param, bool useStream)
+int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd, struct parameters* param, cudaStream_t* stream_index, bool useStream)
 {
     // print species and subcycling
     std::cout << "***  MOVER with SUBCYCLYING "<< param->n_sub_cycles << " - species " << part->species_ID << " ***" << std::endl;
@@ -529,7 +529,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
         }
         else{
             // If batch_size <= STREAM_SIZE, n_streams = 1, and whole batch is done in one stream
-            const int batch_size = to - split_index + 1
+            const long batch_size = to - split_index + 1;
             int n_streams = (batch_size + STREAM_SIZE - 1) / STREAM_SIZE;
             for (int stream_idx = 0; stream_idx < n_streams; stream_idx++)
             {
@@ -539,7 +539,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                 long particle_idx = split_index + stream_idx * stream_end;
                 const long n_particles = stream_end - stream_start;
                 size_t stream_size = n_particles * sizeof(FPpart);
-                cudaStream_t stream_index;
+
 
                 FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
                 cudaMalloc(&d_x, stream_size);
@@ -550,19 +550,19 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                 cudaMalloc(&d_w, stream_size);
 
                 // Use async copy for particles
-                cudaMemcpyAsync(d_x, part->x + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(d_y, part->y + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(d_z, part->z + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(d_u, part->u + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(d_v, part->v + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(d_w, part->w + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index);
+                cudaMemcpyAsync(d_x, part->x + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(d_y, part->y + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(d_z, part->z + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(d_u, part->u + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(d_v, part->v + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(d_w, part->w + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
 
                 std::cout << "Before loop" << ". Batch idxs:" << split_index << ":" << to << ". # of elems:" << n_particles
                           << "Stream index:" << particle_idx << std::endl;
                 // start subcycling
                 for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
                     /*call kernel*/
-                    particle_kernel << < (n_particles + TPB - 1) / TPB, TPB, 0, stream_index >> > (d_x, d_y, d_z, d_u, d_v, d_w,
+                    particle_kernel << < (n_particles + TPB - 1) / TPB, TPB, 0, stream_index[stream_idx] >> > (d_x, d_y, d_z, d_u, d_v, d_w,
                             d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
                             grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz,
                             grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
@@ -574,12 +574,12 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 
                 } // end of one particle
 
-                cudaMemcpyAsync(part->x + particle_idx, d_x, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(part->y + particle_idx, d_y, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(part->z + particle_idx, d_z, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(part->u + particle_idx, d_u, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(part->v + particle_idx, d_v, stream_size, cudaMemcpyHostToDevice, stream_index);
-                cudaMemcpyAsync(part->w + particle_idx, d_w, stream_size, cudaMemcpyHostToDevice, stream_index);
+                cudaMemcpyAsync(part->x + particle_idx, d_x, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(part->y + particle_idx, d_y, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(part->z + particle_idx, d_z, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(part->u + particle_idx, d_u, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(part->v + particle_idx, d_v, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
+                cudaMemcpyAsync(part->w + particle_idx, d_w, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
                 // Launch the kernel to perform on the stream
 
                 // Copy back
