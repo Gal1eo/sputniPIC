@@ -529,6 +529,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
         }
         else{
             // If batch_size <= STREAM_SIZE, n_streams = 1, and whole batch is done in one stream
+            const int batch_size = to - split_index + 1
             int n_streams = (batch_size + STREAM_SIZE - 1) / STREAM_SIZE;
             for (int stream_idx = 0; stream_idx < n_streams; stream_idx++)
             {
@@ -538,7 +539,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                 long particle_idx = split_index + stream_idx * stream_end;
                 const long n_particles = stream_end - stream_start;
                 size_t stream_size = n_particles * sizeof(FPpart);
-                cudaStream_t stream_index
+                cudaStream_t stream_index;
 
                 FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
                 cudaMalloc(&d_x, stream_size);
