@@ -2,6 +2,7 @@
 #include "Alloc.h"
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <cassert>
 #define TPB 64
 #define TOTAL 10000
 #define K 4
@@ -483,24 +484,24 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     const int stream_bytes = stream_size * sizeof(FPpart);
 
     // initialize streams
-    cudaStream_t stream[n_streams];
+    cudaStream_t stream[N_STREAMS];
     for (int i = 0; i < N_STREAMS; i++)
         cudaStreamCreate(&stream[i]);
 
-    for (int stream_idx = 0; stream_idx < n_streams; stream_idx++)
+    for (int stream_idx = 0; stream_idx < N_STREAMS; stream_idx++)
     {
 
         int offset = stream_idx * stream_size;
 
         // Use async copy for particles
-        cudaMemcpyAsync(&d_x[offset], &part->x[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
-        cudaMemcpyAsync(&d_y[offset], &part->y[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
-        cudaMemcpyAsync(&d_z[offset], &part->z[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
-        cudaMemcpyAsync(&d_u[offset], &part->u[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
-        cudaMemcpyAsync(&d_v[offset], &part->v[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
-        cudaMemcpyAsync(&d_w[offset], &part->w[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_x[offset], &part->x[offset], stream_bytes, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_y[offset], &part->y[offset], stream_bytes, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_z[offset], &part->z[offset], stream_bytes, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_u[offset], &part->u[offset], stream_bytes, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_v[offset], &part->v[offset], stream_bytes, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_w[offset], &part->w[offset], stream_bytes, cudaMemcpyHostToDevice, stream[stream_idx]);
 
-        std::cout << "Before loop" << ". Batch idxs:" << split_index << ":" << to << ". # of elems:" << n_particles
+        std::cout << "Before loop" << ". Offset:" << offset << ". # of elems:" << stream_size
                   << " Stream index:" << stream_idx << std::endl;
         // start subcycling
         for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
@@ -520,19 +521,19 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
 
         } // end of one particle
 
-        cudaMemcpyAsync(&part->x[offset], &d_x[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
-        cudaMemcpyAsync(&part->y[offset], &d_y[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
-        cudaMemcpyAsync(&part->z[offset], &d_z[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
-        cudaMemcpyAsync(&part->u[offset], &d_u[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
-        cudaMemcpyAsync(&part->v[offset], &d_v[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
-        cudaMemcpyAsync(&part->w[offset], &d_w[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->x[offset], &d_x[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->y[offset], &d_y[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->z[offset], &d_z[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->u[offset], &d_u[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->v[offset], &d_v[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->w[offset], &d_w[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
 
-        cudaSteamSynchronize(stream[stream_idx]);
+        cudaStreamSynchronize(stream[stream_idx]);
 
     }
 
     for(int i = 0; i < N_STREAMS; i++){
-            cudaStreamDestroy(stream_index[i]);
+            cudaStreamDestroy(stream[i]);
     }
 
     /*
