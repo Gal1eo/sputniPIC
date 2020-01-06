@@ -7,6 +7,7 @@
 #define K 4
 #define MAX_GPU_PARTICILES 10000
 #define STREAM_SIZE 6000
+#define N_STREAMS 4
 
 
 /** allocate particle arrays */
@@ -271,11 +272,11 @@ __global__ void particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPp
                             FPfield* Bxn_flat, FPfield* Byn_flat, FPfield* Bzn_flat,
                             bool PERIODICX, bool PERIODICY, bool PERIODICZ, 
                             FPpart dt_sub_cycling, FPpart dto2, FPpart qomdt2,
-                            const int NiterMover, const int npmax)
+                            const int NiterMover, const int npmax, const int offset)
 {
     //calculate global index and check boundary
-    const int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx > npmax) return;
+    const int idx = blockIdx.x*blockDim.x + threadIdx.x + offset;
+    if(idx - offset > npmax) return;
 
     FPpart omdtsq, denom, ut, vt, wt, udotb;
 
@@ -469,11 +470,72 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMemGetInfo(&free_memory, &total_memory);
     std::cout<<"Free:"<<free_memory<<" , Total:"<<total_memory<<std::endl;
 
- 
-    //const long int split = part->npmax / K;
-    long int split_index = 0;
+    FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
+    cudaMalloc(&d_x, part->npmax * sizeof(FPpart));
+    cudaMalloc(&d_y, part->npmax * sizeof(FPpart));
+    cudaMalloc(&d_z, part->npmax * sizeof(FPpart));
+    cudaMalloc(&d_u, part->npmax * sizeof(FPpart));
+    cudaMalloc(&d_v, part->npmax * sizeof(FPpart));
+    cudaMalloc(&d_w, part->npmax * sizeof(FPpart));
+
+    assert(part->npmax % N_STREAMS == 0);
+    const int stream_size = part->npmax / N_STREAMS;
+    const int stream_bytes = stream_size * sizeof(FPpart);
+
+    // initialize streams
+    cudaStream_t stream[n_streams];
+    for (int i = 0; i < N_STREAMS; i++)
+        cudaStreamCreate(&stream[i]);
+
+    for (int stream_idx = 0; stream_idx < n_streams; stream_idx++)
+    {
+
+        int offset = stream_idx * stream_size;
+
+        // Use async copy for particles
+        cudaMemcpyAsync(&d_x[offset], &part->x[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_y[offset], &part->y[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_z[offset], &part->z[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_u[offset], &part->u[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_v[offset], &part->v[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+        cudaMemcpyAsync(&d_w[offset], &part->w[offset], stream_size, cudaMemcpyHostToDevice, stream[stream_idx]);
+
+        std::cout << "Before loop" << ". Batch idxs:" << split_index << ":" << to << ". # of elems:" << n_particles
+                  << " Stream index:" << stream_idx << std::endl;
+        // start subcycling
+        for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
+            //call kernel
+            particle_kernel <<< (stream_size + TPB - 1) / TPB, TPB, 0, stream[stream_idx] >>> 
+                    (
+                    d_x, d_y, d_z, d_u, d_v, d_w,
+                    d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
+                    grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz,
+                    grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
+                    d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
+                    param->PERIODICX, param->PERIODICY, param->PERIODICZ,
+                    dt_sub_cycling, dto2, qomdt2,
+                    part->NiterMover, stream_size, offset
+                    );
 
 
+        } // end of one particle
+
+        cudaMemcpyAsync(&part->x[offset], &d_x[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->y[offset], &d_y[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->z[offset], &d_z[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->u[offset], &d_u[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->v[offset], &d_v[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+        cudaMemcpyAsync(&part->w[offset], &d_w[offset], stream_size, cudaMemcpyDeviceToHost, stream[stream_idx]);
+
+        cudaSteamSynchronize(stream[stream_idx]);
+
+    }
+
+    for(int i = 0; i < N_STREAMS; i++){
+            cudaStreamDestroy(stream_index[i]);
+    }
+
+    /*
     while(true)
     {
         const long int to = split_index + MAX_GPU_PARTICILES - 1 < part->npmax - 1 ? split_index + MAX_GPU_PARTICILES - 1 : part->npmax - 1;
@@ -507,7 +569,6 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
                       << std::endl;
             // start subcycling
             for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
-                /*call kernel*/
                 particle_kernel << < (n_particles + TPB - 1) / TPB, TPB >> > (d_x, d_y, d_z, d_u, d_v, d_w,
                         d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
                         grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz,
@@ -545,76 +606,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
         else{
             //createStreams(&streams);
 	    // If batch_size <= STREAM_SIZE, n_streams = 1, and whole batch is done in one stream
-            const long batch_size = to - split_index + 1;
-            int n_streams = (batch_size + STREAM_SIZE - 1) / STREAM_SIZE;
-            cudaStream_t stream_index[n_streams];
-            for (int stream_idx = 0; stream_idx < n_streams; stream_idx++)
-            {
-
-                long stream_start = stream_idx * STREAM_SIZE;
-                long stream_end = std::min(stream_start + STREAM_SIZE, batch_size);  // max is batch_size
-                long particle_idx = split_index + stream_idx * stream_end;
-                const long n_particles = stream_end - stream_start;
-                size_t stream_size = n_particles * sizeof(FPpart);
-		cudaStreamCreate(&stream_index[stream_idx]);
-
-                FPpart *d_x, *d_y, *d_z, *d_u, *d_v, *d_w;
-                cudaMalloc(&d_x, stream_size);
-                cudaMalloc(&d_y, stream_size);
-                cudaMalloc(&d_z, stream_size);
-                cudaMalloc(&d_u, stream_size);
-                cudaMalloc(&d_v, stream_size);
-                cudaMalloc(&d_w, stream_size);
-
-                // Use async copy for particles
-                cudaMemcpyAsync(d_x, part->x + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(d_y, part->y + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(d_z, part->z + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(d_u, part->u + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(d_v, part->v + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(d_w, part->w + particle_idx, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-
-                std::cout << "Before loop" << ". Batch idxs:" << split_index << ":" << to << ". # of elems:" << n_particles
-                          << "Stream index:" << particle_idx << std::endl;
-                // start subcycling
-                for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
-                    //call kernel
-                    particle_kernel << < (n_particles + TPB - 1) / TPB, TPB, 0, stream_index[stream_idx] >> > (d_x, d_y, d_z, d_u, d_v, d_w,
-                            d_XN_flat, d_YN_flat, d_ZN_flat, grd->nxn, grd->nyn, grd->nzn,
-                            grd->xStart, grd->yStart, grd->zStart, grd->invdx, grd->invdy, grd->invdz,
-                            grd->Lx, grd->Ly, grd->Lz, grd->invVOL,
-                            d_Ex_flat, d_Ey_flat, d_Ez_flat, d_Bxn_flat, d_Byn_flat, d_Bzn_flat,
-                            param->PERIODICX, param->PERIODICY, param->PERIODICZ,
-                            dt_sub_cycling, dto2, qomdt2,
-                            part->NiterMover, n_particles);
-
-
-                } // end of one particle
-
-                cudaMemcpyAsync(part->x + particle_idx, d_x, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(part->y + particle_idx, d_y, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(part->z + particle_idx, d_z, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(part->u + particle_idx, d_u, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(part->v + particle_idx, d_v, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                cudaMemcpyAsync(part->w + particle_idx, d_w, stream_size, cudaMemcpyHostToDevice, stream_index[stream_idx]);
-                // Launch the kernel to perform on the stream
-
-                // Copy back
-
-        
-
-        cudaFree(d_x);
-        cudaFree(d_y);
-        cudaFree(d_z);
-        cudaFree(d_u);
-        cudaFree(d_v);
-        cudaFree(d_w);
-		}
-	cudaDeviceSynchronize();
-	for(int i = 0; i < n_streams; i++){
-		cudaStreamDestroy(stream_index[i]);
-	}
-	split_index += MAX_GPU_PARTICILES;
+            	split_index += MAX_GPU_PARTICILES;
         if (to == part->npmax - 1)
             break;
 
@@ -624,7 +616,13 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
        
         
     }
-    
+    */
+    cudaFree(d_x);
+    cudaFree(d_y);
+    cudaFree(d_z);
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_w);
     //E-nodes
     cudaMemcpy(field->Ex_flat, d_Ex_flat, grd->nxn * grd->nyn * grd->nzn * sizeof(FPfield), cudaMemcpyDeviceToHost);
 
