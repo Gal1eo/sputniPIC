@@ -68,12 +68,16 @@ int main(int argc, char **argv){
     particles *part = new particles[param.ns];
     // allocation
     for (int is=0; is < param.ns; is++){
-        particle_allocate(&param,&part[is],is);
+        particle_allocate(&param,&part[is],is, true);
     }
     
     // Initialization
     initGEM(&param,&grd,&field,&field_aux,part,ids);
-    
+
+    // Create streams
+    //cudaStream_t* streams;
+    //cudaStreamCreate(&streams);
+
     
     // **********************************************************//
     // **** Start the Simulation!  Cycle index start from 1  *** //
@@ -94,7 +98,7 @@ int main(int argc, char **argv){
         iMover = cpuSecond(); // start timer for mover
         //mover_PC(&part, &field, &grd, &param);
         for (int is=0; is < param.ns; is++)
-            gpu_mover_PC(&part[is], &field, &grd, &param);
+            gpu_mover_PC(&part[is], &field, &grd, &param, true);
         eMover += (cpuSecond() - iMover); // stop timer for mover
         
 
@@ -137,9 +141,9 @@ int main(int argc, char **argv){
     // Deallocate interpolated densities and particles
     for (int is=0; is < param.ns; is++){
         interp_dens_species_deallocate(&grd,&ids[is]);
-        particle_deallocate(&part[is]);
+        particle_deallocate(&part[is], true);
     }
-    
+    //cudaStreamDestroy(streams);
     
     // stop timer
     double iElaps = cpuSecond() - iStart;
