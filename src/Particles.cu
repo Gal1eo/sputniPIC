@@ -6,7 +6,7 @@
 #define TPB 64
 #define TOTAL 10000
 #define K 4
-#define MAX_GPU_PARTICILES 10000
+#define MAX_GPU_PARTICLES 1024000
 #define STREAM_SIZE 6000
 #define N_STREAMS 4
 
@@ -476,7 +476,7 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     const int batch_size = MAX_GPU_PARTICLES;
     const int batch_bytes = batch_size * sizeof(FPpart);
 
-    for (int batch_idx = 0; batch_idx < n_batches; b++)
+    for (int batch_idx = 0; batch_idx < n_batches; batch_idx++)
     {
         const int batch_offset = batch_idx * batch_size;
 
