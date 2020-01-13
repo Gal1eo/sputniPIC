@@ -43,7 +43,7 @@ int main(int argc, char **argv){
     // Timing variables
     double iStart = cpuSecond();
     //double iMover, iInterp, eMover = 0.0, eInterp= 0.0;
-    double icomb, ecomb = 0.0;
+    double iComb, eComb = 0.0;
     
     // Set-up the grid information
     grid grd;
@@ -133,7 +133,7 @@ int main(int argc, char **argv){
             VTK_Write_Scalars(cycle, &grd,ids,&idn);
         }
         
-        eInterp += (cpuSecond() - iInterp); // stop timer for interpolation
+        //eInterp += (cpuSecond() - iInterp); // stop timer for interpolation
         
         
     
