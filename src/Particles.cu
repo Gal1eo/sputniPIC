@@ -6,6 +6,7 @@
 #define TPB 64
 #define TOTAL 10000
 #define K 4
+#define N_BATCHES 4
 #define MAX_GPU_PARTICLES 1024000
 #define STREAM_SIZE 6000
 #define N_STREAMS 4
@@ -471,9 +472,9 @@ int gpu_mover_PC(struct particles* part, struct EMfield* field, struct grid* grd
     cudaMemGetInfo(&free_memory, &total_memory);
     std::cout<<"Free:"<<free_memory<<" , Total:"<<total_memory<<std::endl;
 
-    assert(part->npmax % MAX_GPU_PARTICLES == 0); 
-    const int n_batches = part->npmax / MAX_GPU_PARTICLES;
-    const int batch_size = MAX_GPU_PARTICLES;
+    assert(part->npmax % N_BATCHES == 0); 
+    const int n_batches = N_BATCHES;//part->npmax / MAX_GPU_PARTICLES;
+    const int batch_size = part->npmax / N_BATCHES;
     const int batch_bytes = batch_size * sizeof(FPpart);
 
     for (int batch_idx = 0; batch_idx < n_batches; batch_idx++)
