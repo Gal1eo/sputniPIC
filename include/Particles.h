@@ -53,16 +53,16 @@ struct particles {
 };
 
 /** allocate particle arrays */
-void particle_allocate(struct parameters*, struct particles*, int);
+void particle_allocate(struct parameters*, struct particles*, int, bool);
 
 /** deallocate */
-void particle_deallocate(struct particles*);
+void particle_deallocate(struct particles*, bool);
 
 /** cpu_particle mover*/
 int cpu_mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*);
 
 /** gpu_particle mover*/
-int gpu_mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*);
+int gpu_mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*, bool);
 
 /** particle mover */
 int mover_PC(struct particles*, struct EMfield*, struct grid*, struct parameters*);
