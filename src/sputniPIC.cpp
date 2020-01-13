@@ -114,7 +114,7 @@ int main(int argc, char **argv){
         */
         iComb = cpuSecond(); // start timer for combined
         for (int is=0; is < param.ns; is++)
-            gpu_mover_PC(&part[is], &field, &grd, &param, true, &ids[is]);
+            combined_phases(&part[is], &field, &grd, &param, true, &ids[is]);
         iComb += (cpuSecond() - iComb); // stop timer for mover
 
         // apply BC to interpolated densities
