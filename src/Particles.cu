@@ -757,9 +757,10 @@ __global__ void particle_kernel( FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPp
                                  const int NiterMover, const int npmax, const int offset)
 */
 /*Combined kernel of particle mover and interpolation*/
-__global__ combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPinterp* q,
+__global__ void combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPinterp* q,
                     FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn,
-                    double xStart, double yStart, double zStart, FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
+                    double xStart, double yStart, double zStart, double Lx, double Ly, double Lz,
+                    FPfield invdx, FPfield invdy, FPfield invdz, FPfield invVOL,
                     FPfield* Ex_flat, FPfield* Ey_flat, FPfield* Ez_flat,
                     FPfield* Bxn_flat, FPfield* Byn_flat, FPfield* Bzn_flat,
                     FPinterp* Jx_flat, FPinterp* Jy_flat, FPinterp *Jz_flat, FPinterp *rhon_flat,
@@ -767,7 +768,7 @@ __global__ combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v
                     FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat,
                     bool PERIODICX, bool PERIODICY, bool PERIODICZ,
                     FPpart dt_sub_cycling, FPpart dto2, FPpart qomdt2,
-                    const int NiterMover,const int npmax, const int offset)
+                    const int NiterMover, const int npmax, const int offset)
 {
     //calculate global index and check boundary
     const int idx = blockIdx.x*blockDim.x + threadIdx.x + offset;
@@ -913,17 +914,14 @@ __global__ combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v
         }
     }
 
-    //calculate global index and check boundary
-    const int idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if(idx >= npmax) return;
+
 
     // arrays needed for interpolation
-    FPpart weight[2][2][2];
-    FPpart temp[2][2][2];
-    FPpart xi[2], eta[2], zeta[2];
+    //FPpart weight[2][2][2];
+    //FPpart temp[2][2][2];
+    //FPpart xi[2], eta[2], zeta[2];
 
-    // 3-D index of the cell
-    int ix, iy, iz;
+
 
     ix = 2 + int (floor((x[idx] - xStart) * invdx));
     iy = 2 + int (floor((y[idx] - yStart) * invdy));
