@@ -42,7 +42,8 @@ int main(int argc, char **argv){
     
     // Timing variables
     double iStart = cpuSecond();
-    double iMover, iInterp, eMover = 0.0, eInterp= 0.0;
+    //double iMover, iInterp, eMover = 0.0, eInterp= 0.0;
+    double icomb, ecomb = 0.0;
     
     // Set-up the grid information
     grid grd;
@@ -93,7 +94,7 @@ int main(int argc, char **argv){
         setZeroDensities(&idn,ids,&grd,param.ns);
 
         
-        
+        /*
         // implicit mover
         iMover = cpuSecond(); // start timer for mover
         //mover_PC(&part, &field, &grd, &param);
@@ -109,6 +110,13 @@ int main(int argc, char **argv){
         // interpolate species
         for (int is=0; is < param.ns; is++)
             gpu_interpP2G(&part[is],&ids[is],&grd);
+
+        */
+        iComb = cpuSecond(); // start timer for combined
+        for (int is=0; is < param.ns; is++)
+            gpu_mover_PC(&part[is], &field, &grd, &param, true, &ids[is]);
+        iComb += (cpuSecond() - iComb); // stop timer for mover
+
         // apply BC to interpolated densities
         for (int is=0; is < param.ns; is++)
             applyBCids(&ids[is],&grd,&param);
@@ -152,8 +160,9 @@ int main(int argc, char **argv){
     std::cout << std::endl;
     std::cout << "**************************************" << std::endl;
     std::cout << "   Tot. Simulation Time (s) = " << iElaps << std::endl;
-    std::cout << "   Mover Time / Cycle   (s) = " << eMover/param.ncycles << std::endl;
-    std::cout << "   Interp. Time / Cycle (s) = " << eInterp/param.ncycles  << std::endl;
+    //std::cout << "   Mover Time / Cycle   (s) = " << eMover/param.ncycles << std::endl;
+    //std::cout << "   Interp. Time / Cycle (s) = " << eInterp/param.ncycles  << std::endl;
+    std::cout << "   Combined Time / Cycle   (s) = " << eComb/param.ncycles << std::endl;
     std::cout << "**************************************" << std::endl;
     
     // exit

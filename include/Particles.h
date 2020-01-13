@@ -73,4 +73,8 @@ void gpu_interpP2G(struct particles* part, struct interpDensSpecies* ids, struct
 /** Interpolation Particle --> Grid: This is for species */
 void interpP2G(struct particles*, struct interpDensSpecies*, struct grid*);
 
+/** gpu combined kernels*/
+void combined_phases(struct particles* part, struct EMfield* field, struct grid* grd,
+                     struct parameters* param, bool , struct interpDensSpecies* ids);
+
 #endif
