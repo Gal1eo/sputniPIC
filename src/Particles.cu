@@ -918,7 +918,7 @@ __global__ void combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
 
     // arrays needed for interpolation
     //FPpart weight[2][2][2];
-    //FPpart temp[2][2][2];
+    FPpart temp[2][2][2];
     //FPpart xi[2], eta[2], zeta[2];
 
 
@@ -1438,7 +1438,7 @@ void combined_phases(struct particles* part, struct EMfield* field, struct grid*
         cudaMalloc(&d_u, part_batch_bytes);
         cudaMalloc(&d_v, part_batch_bytes);
         cudaMalloc(&d_w, part_batch_bytes);
-        cudaMalloc(&d_q, inter_batch_bytes)
+        cudaMalloc(&d_q, inter_batch_bytes);
 
         // initialize streams
         cudaStream_t stream[N_STREAMS];
@@ -1496,12 +1496,12 @@ void combined_phases(struct particles* part, struct EMfield* field, struct grid*
 
             } // end of one particle
 
-            cudaMemcpyAsync(&part->x[global_offset], &d_x[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
-            cudaMemcpyAsync(&part->y[global_offset], &d_y[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
-            cudaMemcpyAsync(&part->z[global_offset], &d_z[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
-            cudaMemcpyAsync(&part->u[global_offset], &d_u[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
-            cudaMemcpyAsync(&part->v[global_offset], &d_v[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
-            cudaMemcpyAsync(&part->w[global_offset], &d_w[offset], stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+            cudaMemcpyAsync(&part->x[global_offset], &d_x[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+            cudaMemcpyAsync(&part->y[global_offset], &d_y[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+            cudaMemcpyAsync(&part->z[global_offset], &d_z[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+            cudaMemcpyAsync(&part->u[global_offset], &d_u[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+            cudaMemcpyAsync(&part->v[global_offset], &d_v[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
+            cudaMemcpyAsync(&part->w[global_offset], &d_w[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
 
             cudaStreamSynchronize(stream[stream_idx]);
 
@@ -1568,5 +1568,5 @@ void combined_phases(struct particles* part, struct EMfield* field, struct grid*
     cudaFree(d_pyz_flat);
     cudaFree(d_pzz_flat);
 
-    return(0); // exit succcesfully
+   // return(0); // exit succcesfully
 } // end of the mover
