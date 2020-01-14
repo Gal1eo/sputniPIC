@@ -768,7 +768,7 @@ __global__ void combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
                     FPinterp* pyy_flat, FPinterp* pyz_flat, FPinterp* pzz_flat,
                     bool PERIODICX, bool PERIODICY, bool PERIODICZ,
                     FPpart dt_sub_cycling, FPpart dto2, FPpart qomdt2,
-                    const int NiterMover, const int npmax, const int offset)
+                    const int NiterMover, const int npmax, const int offset, const int n_sub_cycles)
 {
     //calculate global index and check boundary
     const int idx = blockIdx.x*blockDim.x + threadIdx.x + offset;
@@ -787,130 +787,138 @@ __global__ void combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpa
     // intermediate particle position and velocity
     FPpart xptilde, yptilde, zptilde, uptilde, vptilde, wptilde;
 
-    // replace all indicies i to idx. all part->* replace to *
-    xptilde = x[idx];
-    yptilde = y[idx];
-    zptilde = z[idx];
-    // calculate the average velocity iteratively
-    for(int innter=0; innter < NiterMover; innter++){
-        // interpolation G-->P
-        ix = 2 +  int((x[idx] - xStart)*invdx);
-        iy = 2 +  int((y[idx] - yStart)*invdy);
-        iz = 2 +  int((z[idx] - zStart)*invdz);
+    for (int i_sub = 0; n_sub_cycles; i_sub++) {
+        // replace all indicies i to idx. all part->* replace to *
+        xptilde = x[idx];
+        yptilde = y[idx];
+        zptilde = z[idx];
+        // calculate the average velocity iteratively
+        for (int innter = 0; innter < NiterMover; innter++) {
+            // interpolation G-->P
+            ix = 2 + int((x[idx] - xStart) * invdx);
+            iy = 2 + int((y[idx] - yStart) * invdy);
+            iz = 2 + int((z[idx] - zStart) * invdz);
 
-        // calculate weights
-        xi[0]   = x[idx] - XN_flat[get_idx(ix-1, iy, iz, nyn, nzn)];//grd->XN[ix - 1][iy][iz];
-        eta[0]  = y[idx] - YN_flat[get_idx(ix, iy-1, iz, nyn, nzn)];//grd->YN[ix][iy - 1][iz];
-        zeta[0] = z[idx] - ZN_flat[get_idx(ix, iy, iz-1, nyn, nzn)];//grd->ZN[ix][iy][iz - 1];
-        xi[1]   = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];//grd->XN[ix][iy][iz] - x[i];
-        eta[1]  = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
-        zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
-        for (int ii = 0; ii < 2; ii++)
-            for (int jj = 0; jj < 2; jj++)
-                for (int kk = 0; kk < 2; kk++)
-                    weight[ii][jj][kk] = xi[ii] * eta[jj] * zeta[kk] * invVOL;
+            // calculate weights
+            xi[0] = x[idx] - XN_flat[get_idx(ix - 1, iy, iz, nyn, nzn)];//grd->XN[ix - 1][iy][iz];
+            eta[0] = y[idx] - YN_flat[get_idx(ix, iy - 1, iz, nyn, nzn)];//grd->YN[ix][iy - 1][iz];
+            zeta[0] = z[idx] - ZN_flat[get_idx(ix, iy, iz - 1, nyn, nzn)];//grd->ZN[ix][iy][iz - 1];
+            xi[1] = XN_flat[get_idx(ix, iy, iz, nyn, nzn)] - x[idx];//grd->XN[ix][iy][iz] - x[i];
+            eta[1] = YN_flat[get_idx(ix, iy, iz, nyn, nzn)] - y[idx];//;grd->YN[ix][iy][iz] - y[i];
+            zeta[1] = ZN_flat[get_idx(ix, iy, iz, nyn, nzn)] - z[idx];//grd->ZN[ix][iy][iz] - z[i];
+            for (int ii = 0; ii < 2; ii++)
+                for (int jj = 0; jj < 2; jj++)
+                    for (int kk = 0; kk < 2; kk++)
+                        weight[ii][jj][kk] = xi[ii] * eta[jj] * zeta[kk] * invVOL;
 
-        // set to zero local electric and magnetic field
-        Exl=0.0, Eyl = 0.0, Ezl = 0.0, Bxl = 0.0, Byl = 0.0, Bzl = 0.0;
+            // set to zero local electric and magnetic field
+            Exl = 0.0, Eyl = 0.0, Ezl = 0.0, Bxl = 0.0, Byl = 0.0, Bzl = 0.0;
 
-        for (int ii=0; ii < 2; ii++)
-            for (int jj=0; jj < 2; jj++)
-                for(int kk=0; kk < 2; kk++){
-                    Exl += weight[ii][jj][kk]*Ex_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ex[ix- ii][iy -jj][iz- kk ];
-                    Eyl += weight[ii][jj][kk]*Ey_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ey[ix- ii][iy -jj][iz- kk ];
-                    Ezl += weight[ii][jj][kk]*Ez_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Ez[ix- ii][iy -jj][iz -kk ];
-                    Bxl += weight[ii][jj][kk]*Bxn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bxn[ix- ii][iy -jj][iz -kk ];
-                    Byl += weight[ii][jj][kk]*Byn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Byn[ix- ii][iy -jj][iz -kk ];
-                    Bzl += weight[ii][jj][kk]*Bzn_flat[get_idx(ix-ii, iy-jj, iz-kk, nyn, nzn)];//field->Bzn[ix- ii][iy -jj][iz -kk ];
-                }
+            for (int ii = 0; ii < 2; ii++)
+                for (int jj = 0; jj < 2; jj++)
+                    for (int kk = 0; kk < 2; kk++) {
+                        Exl += weight[ii][jj][kk] * Ex_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn,
+                                                                    nzn)];//field->Ex[ix- ii][iy -jj][iz- kk ];
+                        Eyl += weight[ii][jj][kk] * Ey_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn,
+                                                                    nzn)];//field->Ey[ix- ii][iy -jj][iz- kk ];
+                        Ezl += weight[ii][jj][kk] * Ez_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn,
+                                                                    nzn)];//field->Ez[ix- ii][iy -jj][iz -kk ];
+                        Bxl += weight[ii][jj][kk] * Bxn_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn,
+                                                                     nzn)];//field->Bxn[ix- ii][iy -jj][iz -kk ];
+                        Byl += weight[ii][jj][kk] * Byn_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn,
+                                                                     nzn)];//field->Byn[ix- ii][iy -jj][iz -kk ];
+                        Bzl += weight[ii][jj][kk] * Bzn_flat[get_idx(ix - ii, iy - jj, iz - kk, nyn,
+                                                                     nzn)];//field->Bzn[ix- ii][iy -jj][iz -kk ];
+                    }
 
-        // end interpolation
-        omdtsq = qomdt2*qomdt2*(Bxl*Bxl+Byl*Byl+Bzl*Bzl);
-        denom = 1.0/(1.0 + omdtsq);
-        // solve the position equation
-        ut= u[idx] + qomdt2*Exl;
-        vt= v[idx] + qomdt2*Eyl;
-        wt= w[idx] + qomdt2*Ezl;
-        udotb = ut*Bxl + vt*Byl + wt*Bzl;
-        // solve the velocity equation
-        uptilde = (ut+qomdt2*(vt*Bzl -wt*Byl + qomdt2*udotb*Bxl))*denom;
-        vptilde = (vt+qomdt2*(wt*Bxl -ut*Bzl + qomdt2*udotb*Byl))*denom;
-        wptilde = (wt+qomdt2*(ut*Byl -vt*Bxl + qomdt2*udotb*Bzl))*denom;
-        // update position
-        x[idx] = xptilde + uptilde*dto2;
-        y[idx] = yptilde + vptilde*dto2;
-        z[idx] = zptilde + wptilde*dto2;
-
-
-    } // end of iteration
-    // update the final position and velocity
-    u[idx]= 2.0*uptilde - u[idx];
-    v[idx]= 2.0*vptilde - v[idx];
-    w[idx]= 2.0*wptilde - w[idx];
-    x[idx] = xptilde + uptilde*dt_sub_cycling;
-    y[idx] = yptilde + vptilde*dt_sub_cycling;
-    z[idx] = zptilde + wptilde*dt_sub_cycling;
+            // end interpolation
+            omdtsq = qomdt2 * qomdt2 * (Bxl * Bxl + Byl * Byl + Bzl * Bzl);
+            denom = 1.0 / (1.0 + omdtsq);
+            // solve the position equation
+            ut = u[idx] + qomdt2 * Exl;
+            vt = v[idx] + qomdt2 * Eyl;
+            wt = w[idx] + qomdt2 * Ezl;
+            udotb = ut * Bxl + vt * Byl + wt * Bzl;
+            // solve the velocity equation
+            uptilde = (ut + qomdt2 * (vt * Bzl - wt * Byl + qomdt2 * udotb * Bxl)) * denom;
+            vptilde = (vt + qomdt2 * (wt * Bxl - ut * Bzl + qomdt2 * udotb * Byl)) * denom;
+            wptilde = (wt + qomdt2 * (ut * Byl - vt * Bxl + qomdt2 * udotb * Bzl)) * denom;
+            // update position
+            x[idx] = xptilde + uptilde * dto2;
+            y[idx] = yptilde + vptilde * dto2;
+            z[idx] = zptilde + wptilde * dto2;
 
 
-    //////////
-    //////////
-    ////////// BC
+        } // end of iteration
+        // update the final position and velocity
+        u[idx] = 2.0 * uptilde - u[idx];
+        v[idx] = 2.0 * vptilde - v[idx];
+        w[idx] = 2.0 * wptilde - w[idx];
+        x[idx] = xptilde + uptilde * dt_sub_cycling;
+        y[idx] = yptilde + vptilde * dt_sub_cycling;
+        z[idx] = zptilde + wptilde * dt_sub_cycling;
 
-    // X-DIRECTION: BC particles
-    if (x[idx] > Lx){
-        if (PERIODICX==true){ // PERIODIC
-            x[idx] = x[idx] - Lx;
-        } else { // REFLECTING BC
-            u[idx] = -u[idx];
-            x[idx] = 2*Lx - x[idx];
+
+        //////////
+        //////////
+        ////////// BC
+
+        // X-DIRECTION: BC particles
+        if (x[idx] > Lx) {
+            if (PERIODICX == true) { // PERIODIC
+                x[idx] = x[idx] - Lx;
+            } else { // REFLECTING BC
+                u[idx] = -u[idx];
+                x[idx] = 2 * Lx - x[idx];
+            }
         }
-    }
 
-    if (x[idx] < 0){
-        if (PERIODICX==true){ // PERIODIC
-            x[idx] = x[idx] + Lx;
-        } else { // REFLECTING BC
-            u[idx] = -u[idx];
-            x[idx] = -x[idx];
+        if (x[idx] < 0) {
+            if (PERIODICX == true) { // PERIODIC
+                x[idx] = x[idx] + Lx;
+            } else { // REFLECTING BC
+                u[idx] = -u[idx];
+                x[idx] = -x[idx];
+            }
         }
-    }
 
 
-    // Y-DIRECTION: BC particles
-    if (y[idx] > Ly){
-        if (PERIODICY==true){ // PERIODIC
-            y[idx] = y[idx] - Ly;
-        } else { // REFLECTING BC
-            v[idx] = -v[idx];
-            y[idx] = 2*Ly - y[idx];
+        // Y-DIRECTION: BC particles
+        if (y[idx] > Ly) {
+            if (PERIODICY == true) { // PERIODIC
+                y[idx] = y[idx] - Ly;
+            } else { // REFLECTING BC
+                v[idx] = -v[idx];
+                y[idx] = 2 * Ly - y[idx];
+            }
         }
-    }
 
-    if (y[idx] < 0){
-        if (PERIODICY==true){ // PERIODIC
-            y[idx] = y[idx] + Ly;
-        } else { // REFLECTING BC
-            v[idx] = -v[idx];
-            y[idx] = -y[idx];
+        if (y[idx] < 0) {
+            if (PERIODICY == true) { // PERIODIC
+                y[idx] = y[idx] + Ly;
+            } else { // REFLECTING BC
+                v[idx] = -v[idx];
+                y[idx] = -y[idx];
+            }
         }
-    }
 
-    // Z-DIRECTION: BC particles
-    if (z[idx] > Lz){
-        if (PERIODICZ==true){ // PERIODIC
-            z[idx] = z[idx] - Lz;
-        } else { // REFLECTING BC
-            w[idx] = -w[idx];
-            z[idx] = 2*Lz - z[idx];
+        // Z-DIRECTION: BC particles
+        if (z[idx] > Lz) {
+            if (PERIODICZ == true) { // PERIODIC
+                z[idx] = z[idx] - Lz;
+            } else { // REFLECTING BC
+                w[idx] = -w[idx];
+                z[idx] = 2 * Lz - z[idx];
+            }
         }
-    }
 
-    if (z[idx] < 0){
-        if (PERIODICZ==true){ // PERIODIC
-            z[idx] = z[idx] + Lz;
-        } else { // REFLECTING BC
-            w[idx] = -w[idx];
-            z[idx] = -z[idx];
+        if (z[idx] < 0) {
+            if (PERIODICZ == true) { // PERIODIC
+                z[idx] = z[idx] + Lz;
+            } else { // REFLECTING BC
+                w[idx] = -w[idx];
+                z[idx] = -z[idx];
+            }
         }
     }
 
@@ -1490,7 +1498,7 @@ void combined_phases(struct particles* part, struct EMfield* field, struct grid*
                                                                                            d_pxx_flat, d_pxy_flat, d_pxz_flat, d_pyy_flat, d_pyz_flat,d_pzz_flat,
                                                                                            param->PERIODICX, param->PERIODICY, param->PERIODICZ,
                                                                                            dt_sub_cycling, dto2, qomdt2,
-                                                                                           part->NiterMover, stream_size, offset
+                                                                                           part->NiterMover, stream_size, offset, part->n_sub_cycles
                                                                            );
 
 
