@@ -34,7 +34,7 @@ npcelx = 6 6 6 6
 # npcely = number of particles per cell - Direction Y */
 npcely = 6 6 6 6 
 # npcelz = number of particles per cell - Direction Z */
-npcelz = 6 6 6 6  
+npcelz = 6 6 6 6
 
 
 
