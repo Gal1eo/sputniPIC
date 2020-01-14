@@ -1471,7 +1471,7 @@ void combined_phases(struct particles* part, struct EMfield* field, struct grid*
             std::cout << "Before loop" << ". Offset:" << offset << ". # of elems:" << stream_size
                       << " Stream index:" << stream_idx << std::endl;
             // start subcycling
-            for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
+            //for (int i_sub = 0; i_sub < part->n_sub_cycles; i_sub++) {
                 /*
                 __global__ combined_kernel(FPpart* x, FPpart* y, FPpart* z, FPpart* u, FPpart* v, FPpart* w, FPinterp* q,
                                            FPfield* XN_flat, FPfield* YN_flat, FPfield* ZN_flat, int nxn, int nyn, int nzn,
@@ -1502,7 +1502,7 @@ void combined_phases(struct particles* part, struct EMfield* field, struct grid*
                                                                            );
 
 
-            } // end of one particle
+            // end of one particle
 
             cudaMemcpyAsync(&part->x[global_offset], &d_x[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
             cudaMemcpyAsync(&part->y[global_offset], &d_y[offset], part_stream_bytes, cudaMemcpyDeviceToHost, stream[stream_idx]);
